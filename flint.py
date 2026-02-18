@@ -88,6 +88,11 @@ def main():
     default=None,
     help='Maximum year for S&P 500 historical data (default: latest available)'
   )
+  parser.add_argument(
+    '--verbose',
+    action='store_true',
+    help='Print asset breakdown for each pre-retirement year'
+  )
 
   args = parser.parse_args()
 
@@ -121,7 +126,12 @@ def main():
     simulation_max_year=args.sp500_end
   )
 
-  starting_assets = sim.project_pre_retirement(args.start_year)
+  starting_assets = None
+  for year, assets_snapshot in sim.project_pre_retirement(args.start_year):
+    if args.verbose:
+      age = args.age + (year - data_year)
+      print_assets_table(f'Pre-Retirement: Year {year} (Age {age})', assets_snapshot)
+    starting_assets = assets_snapshot
   starting_total = sum(starting_assets.values())
 
   results = list(sim.run(args.start_year, args.end_year, starting_assets=starting_assets))

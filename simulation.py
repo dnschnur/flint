@@ -84,18 +84,19 @@ class Simulation:
     self.simulation_min_year = simulation_min_year or available_years[0]
     self.simulation_max_year = simulation_max_year or available_years[-1]
 
-  def project_pre_retirement(self, retirement_year: int) -> defaultdict[AssetCategory, float]:
-    """Project assets from the data year up to (not including) retirement_year.
+  def project_pre_retirement(self, retirement_year: int):
+    """Project assets year by year from the data year up to (not including) retirement_year.
 
     This phase is deterministic — it uses fixed income, budget, and default growth rates rather than
     historical S&P 500 data. The result is the same for every simulation run, so it should be
     computed once and reused.
 
+    Yields (year, assets) after each year's strategy and growth are applied, starting with the data
+    year and ending with retirement_year - 1. The final yielded assets are the starting assets for
+    retirement.
+
     Args:
       retirement_year: Retirement year (when job income stops).
-
-    Returns:
-      Dict mapping AssetCategory to asset values at the start of retirement.
     """
     # The data year is the CSV anchor year, stored as self.data_year. We derive it here from the
     # source objects as a consistency check; both should agree.
@@ -132,8 +133,7 @@ class Simulation:
         new_assets[category] = value * (1 + category.growth)
 
       current_assets = new_assets
-
-    return current_assets
+      yield year, current_assets
 
   def run(
     self,
@@ -162,7 +162,10 @@ class Simulation:
     """
     # Pre-retirement is deterministic; accept pre-computed values to avoid redundant work when the
     # caller has already called project_pre_retirement() (e.g. to display the starting assets table).
-    pre_retirement_assets = starting_assets or self.project_pre_retirement(start_year)
+    if starting_assets:
+      pre_retirement_assets = starting_assets
+    else:
+      *_, (_, pre_retirement_assets) = self.project_pre_retirement(start_year)
 
     simulation_length = end_year - start_year
     max_historical_start = self.simulation_max_year - simulation_length
