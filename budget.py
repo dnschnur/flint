@@ -11,6 +11,10 @@ from functools import cache
 from rules import Rule, parse_rule
 
 
+# CSV columns that are always ignored during parsing (e.g. human-readable notes).
+_IGNORED_COLUMNS = {'Year', 'Notes'}
+
+
 class BudgetCategory(Enum):
   """Budget categories with associated properties."""
 
@@ -164,7 +168,7 @@ class Budget:
         year_data = {}
 
         for col_name, value in row.items():
-          if col_name == 'Year':
+          if col_name in _IGNORED_COLUMNS:
             continue
 
           value = value.strip()
