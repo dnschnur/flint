@@ -5,6 +5,7 @@ retirement, using historical S&P 500 data.
 """
 
 import argparse
+import os
 import statistics
 
 from datetime import datetime
@@ -14,6 +15,39 @@ from budget import Budget
 from income import Income
 from rmd import RMD
 from simulation import Simulation
+
+
+def _resolve_data_paths(scenario: str | None) -> tuple[str, str, str]:
+  """Resolve the paths to assets, budget, and income CSV files.
+
+  If a scenario name is provided, the files are read from data/<scenario>/, otherwise from data/.
+
+  Args:
+    scenario: Name of the scenario subdirectory under data/, or None.
+
+  Returns:
+    A tuple of (assets_path, budget_path, income_path).
+
+  Raises:
+    FileNotFoundError: If any required files are missing from the scenario directory.
+  """
+  if scenario:
+    directory = os.path.join('data', scenario)
+    paths = (
+      os.path.join(directory, 'assets.csv'),
+      os.path.join(directory, 'budget.csv'),
+      os.path.join(directory, 'income.csv'),
+    )
+
+    missing = [path for path in paths if not os.path.exists(path)]
+    if missing:
+      raise FileNotFoundError(
+        f'Scenario "{scenario}" is missing required files: {", ".join(missing)}'
+      )
+
+    return paths
+
+  return 'data/assets.csv', 'data/budget.csv', 'data/income.csv'
 
 
 def main():
@@ -36,6 +70,12 @@ def main():
     help='Current age'
   )
   parser.add_argument(
+    '--scenario',
+    type=str,
+    default=None,
+    help='Scenario: reads assets, budget, and income from data/<scenario>/ rather than data/'
+  )
+  parser.add_argument(
     '--sp500-start',
     type=int,
     default=None,
@@ -47,43 +87,18 @@ def main():
     default=None,
     help='Maximum year for S&P 500 historical data (default: latest available)'
   )
-  parser.add_argument(
-    '--sp500-path',
-    type=str,
-    default='data/sp500.csv',
-    help='Path to S&P 500 CSV file (default: data/sp500.csv)'
-  )
-  parser.add_argument(
-    '--assets-path',
-    type=str,
-    default='data/assets.csv',
-    help='Path to assets CSV file (default: data/assets.csv)'
-  )
-  parser.add_argument(
-    '--budget-path',
-    type=str,
-    default='data/budget.csv',
-    help='Path to budget CSV file (default: data/budget.csv)'
-  )
-  parser.add_argument(
-    '--income-path',
-    type=str,
-    default='data/income.csv',
-    help='Path to income CSV file (default: data/income.csv)'
-  )
-  parser.add_argument(
-    '--rmd-path',
-    type=str,
-    default='data/rmd.csv',
-    help='Path to RMD divisor CSV file (default: data/rmd.csv)'
-  )
 
   args = parser.parse_args()
 
-  assets = Assets(args.assets_path)
-  budget = Budget(args.budget_path)
-  income = Income(args.income_path)
-  rmd = RMD(args.rmd_path)
+  try:
+    assets_path, budget_path, income_path = _resolve_data_paths(args.scenario)
+  except FileNotFoundError as e:
+    parser.error(str(e))
+
+  assets = Assets(assets_path)
+  budget = Budget(budget_path)
+  income = Income(income_path)
+  rmd = RMD('data/rmd.csv')
 
   current_age = args.age
   current_year = datetime.now().year
@@ -100,7 +115,7 @@ def main():
     rmd=rmd,
     current_age=current_age,
     data_year=data_year,
-    sp500_path=args.sp500_path,
+    sp500_path='data/sp500.csv',
     simulation_min_year=args.sp500_start,
     simulation_max_year=args.sp500_end
   )

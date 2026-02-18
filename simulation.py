@@ -52,7 +52,7 @@ class Simulation:
     rmd: RMD,
     current_age: int,
     data_year: int,
-    sp500_path: str = 'data/sp500.csv',
+    sp500_path: str,
     simulation_min_year: int | None = None,
     simulation_max_year: int | None = None
   ):
