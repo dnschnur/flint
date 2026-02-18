@@ -44,11 +44,12 @@ _RMD_CATEGORIES = {
   AssetCategory.IRA,         # Traditional IRA
 }
 
-_LIQUID_ASSET_CATEGORIES = {
+# Pre-retirement liquid asset drawdown priority order (Cash first, then Bonds, then Stocks).
+_LIQUID_ASSET_CATEGORIES = (
   AssetCategory.CASH,
   AssetCategory.BONDS,
   AssetCategory.STOCKS,
-}
+)
 
 # Asset categories excluded from the general proportional withdrawal pool during retirement.
 # HSA and 529 are reserved for specific expense categories; Real Estate is illiquid and can
