@@ -59,18 +59,47 @@ _RESERVED_ASSET_CATEGORIES = {
 }
 
 
-def _apply_special_account_withdrawals(
+def _apply_529_withdrawal(
   new_assets: defaultdict[AssetCategory, float],
   budget: dict[BudgetCategory, float],
-  shortfall: float,
   eligible_529: float
 ) -> float:
-  """Withdraw from HSA and 529 to cover their designated expense categories.
+  """Unconditionally withdraw from 529 to cover 529-eligible school expenses.
 
-  Applies before general withdrawal logic in both pre-retirement and retirement phases:
-    - HSA covers health expenses (up to the health budget, HSA balance, and shortfall).
-    - 529 covers the 529-eligible portion of school expenses (up to that amount, the 529
-      balance, and the shortfall).
+  This runs regardless of whether income covers school expenses, to ensure 529 assets
+  are not wasted. Any withdrawal is returned as a credit to apply against remaining income
+  or reduce a shortfall.
+
+  Modifies new_assets in place and returns the amount withdrawn.
+
+  Args:
+    new_assets: Current asset balances (modified in place).
+    budget: Budget amounts by category for the year.
+    eligible_529: Fraction of the school budget payable from the 529 plan.
+
+  Returns:
+    The amount withdrawn from the 529 plan.
+  """
+  if not eligible_529:
+    return 0.0
+  school_expenses = budget.get(BudgetCategory.SCHOOL, 0.0)
+  eligible_amount = school_expenses * eligible_529
+  if not eligible_amount:
+    return 0.0
+  withdrawal = min(eligible_amount, new_assets[AssetCategory.PLAN_529])
+  new_assets[AssetCategory.PLAN_529] -= withdrawal
+  return withdrawal
+
+
+def _apply_hsa_withdrawal(
+  new_assets: defaultdict[AssetCategory, float],
+  budget: dict[BudgetCategory, float],
+  shortfall: float
+) -> float:
+  """Withdraw from HSA to cover a health expense shortfall.
+
+  Only draws from the HSA when there is an actual funding shortfall, up to the health
+  budget and available HSA balance.
 
   Modifies new_assets in place and returns the remaining shortfall.
 
@@ -78,27 +107,17 @@ def _apply_special_account_withdrawals(
     new_assets: Current asset balances (modified in place).
     budget: Budget amounts by category for the year.
     shortfall: The current funding shortfall to reduce.
-    eligible_529: Fraction of the school budget payable from the 529 plan.
 
   Returns:
-    The remaining shortfall after special-account withdrawals.
+    The remaining shortfall after the HSA withdrawal.
   """
   health_expenses = budget.get(BudgetCategory.HEALTH, 0.0)
-  if health_expenses:
-    withdrawal = min(health_expenses, new_assets[AssetCategory.HSA], shortfall)
-    if withdrawal:
-      new_assets[AssetCategory.HSA] -= withdrawal
-      shortfall -= withdrawal
-
-  if eligible_529:
-    school_expenses = budget.get(BudgetCategory.SCHOOL, 0.0)
-    eligible_amount = school_expenses * eligible_529
-    if eligible_amount:
-      withdrawal = min(eligible_amount, new_assets[AssetCategory.PLAN_529], shortfall)
-      if withdrawal:
-        new_assets[AssetCategory.PLAN_529] -= withdrawal
-        shortfall -= withdrawal
-
+  if not health_expenses:
+    return shortfall
+  withdrawal = min(health_expenses, new_assets[AssetCategory.HSA], shortfall)
+  if withdrawal:
+    new_assets[AssetCategory.HSA] -= withdrawal
+    shortfall -= withdrawal
   return shortfall
 
 
@@ -136,10 +155,10 @@ class Strategy:
       1. Calculate and withdraw RMDs from applicable accounts
       2. Add regular income
       3. Process budget items (contributions and expenses)
-      4. If there's a shortfall:
+      4. Withdraw from 529 to cover 529-eligible school expenses (always, to avoid waste)
+      5. If there's a shortfall:
          a. Withdraw from HSA to cover health expenses
-         b. Withdraw from 529 to cover 529-eligible school expenses
-         c. Cover any remaining shortfall:
+         b. Cover any remaining shortfall:
             - Pre-retirement: from Cash → Bonds → Stocks; raise if still insufficient
             - Retirement: proportionally from all non-Cash, non-HSA, non-529 assets;
               any uncovered remainder falls to Cash (which may go negative)
@@ -191,11 +210,16 @@ class Strategy:
         new_assets[_BUDGET_TO_ASSET_CATEGORIES[category]] += amount
       remaining -= amount
 
+    # Always withdraw 529-eligible school expenses from the 529 plan, regardless of whether income
+    # covers them. This prevents 529 assets from being wasted if they aren't needed for general
+    # expenses. The withdrawal is credited back to remaining to reduce any shortfall (or surplus).
+    remaining += _apply_529_withdrawal(new_assets, budget, eligible_529)
+
     # If remaining is negative, we need to withdraw from assets
     if remaining < 0:
       shortfall = -remaining
 
-      shortfall = _apply_special_account_withdrawals(new_assets, budget, shortfall, eligible_529)
+      shortfall = _apply_hsa_withdrawal(new_assets, budget, shortfall)
 
       if not retired:
         # Pre-retirement: withdraw remaining shortfall from liquid assets in priority order
