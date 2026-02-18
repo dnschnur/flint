@@ -256,12 +256,14 @@ class Strategy:
         total_pool = sum(general_pool.values())
 
         if total_pool:
-          # Withdraw proportionally from each asset. If an asset's proportional share exceeds its
-          # balance, take the full balance and credit it in full against the shortfall; the
-          # remainder falls to Cash.
+          # Withdraw proportionally from each asset, using the original shortfall for all
+          # proportion calculations so each asset's share is computed independently.
+          # If an asset can't cover its proportional share, take its full balance;
+          # any uncovered remainder falls to Cash.
+          original_shortfall = shortfall
           for category, balance in general_pool.items():
             proportion = balance / total_pool
-            withdrawal = min(balance, shortfall * proportion)
+            withdrawal = min(balance, original_shortfall * proportion)
             new_assets[category] = balance - withdrawal
             shortfall -= withdrawal
 
