@@ -65,36 +65,42 @@ class Income:
   def _load_csv(self, path: str) -> None:
     """Load historical income data from a CSV file.
 
+    Values in the Job Income and Other Income columns are interpreted as rules if they parse as
+    one (e.g. '+3%', '=120000'), or as fixed historical amounts otherwise. A row advances
+    _last_historical_year only if it contains at least one fixed amount.
+
     Expected format:
-      Year,Job Income,Other Income,Job Rule,Other Rule
-      2020,100000,5000,,
-      2021,103000,5100,+3%,+2%
-      2022,,,+3%,+2%
+      Year,Job Income,Other Income
+      2025,120000,0
+      2026,+3%,
+      2030,=0,
     """
     with open(path, 'r') as f:
       reader = csv.DictReader(f)
       for row in reader:
         year = int(row['Year'])
 
-        # Check if this row has actual historical data (not just rules)
+        job_value = row['Job Income'].strip()
+        other_value = row['Other Income'].strip()
+
         has_data = False
-        if row['Job Income'].strip() or row['Other Income'].strip():
-          has_data = True
-          job_income = float(row['Job Income']) if row['Job Income'].strip() else 0.0
-          other_income = float(row['Other Income']) if row['Other Income'].strip() else 0.0
 
-          self._historical_job[year] = job_income
-          self._historical_other[year] = other_income
+        if job_value:
+          if job_rule := parse_rule(year, job_value):
+            self._rules_job[year] = job_rule
+          else:
+            self._historical_job[year] = float(job_value)
+            has_data = True
 
-        # Update last historical year only if this row has data
+        if other_value:
+          if other_rule := parse_rule(year, other_value):
+            self._rules_other[year] = other_rule
+          else:
+            self._historical_other[year] = float(other_value)
+            has_data = True
+
         if has_data and (not self._last_historical_year or year > self._last_historical_year):
           self._last_historical_year = year
-
-        if 'Job Rule' in row and (job_rule := parse_rule(year, row['Job Rule'])):
-          self._rules_job[year] = job_rule
-
-        if 'Other Rule' in row and (other_rule := parse_rule(year, row['Other Rule'])):
-          self._rules_other[year] = other_rule
 
   def _project_job_income(self, year: int) -> float:
     """Returns the projected job income for the given future year."""

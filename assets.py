@@ -91,11 +91,15 @@ class Assets:
   def _load_csv(self, path: str) -> None:
     """Load historical asset data from the given CSV file path.
 
+    Each non-Year column names an asset category. Values are interpreted as rules if they parse
+    as one (e.g. '+3%', '=20000'), or as fixed historical amounts otherwise. A row advances
+    _last_historical_year only if it contains at least one fixed amount.
+
     Expected format:
-      Year,Cash,Stocks,Cash Rules,Stocks Rules,...
-      2020,10000,50000,,
-      2021,12000,55000,+5%,+10%
-      2022,,,+5%,+10%
+      Year,Cash,401K,...
+      2025,10000,500000
+      2026,+3%,+5%
+      2027,,=600000
     """
     with open(path, 'r') as f:
       reader = csv.DictReader(f)
@@ -107,13 +111,14 @@ class Assets:
           if col_name == 'Year':
             continue
 
-          if col_name.endswith(' Rules'):
-            category_name = col_name[:-6]  # Remove ' Rules' suffix
-            category = AssetCategory.from_name(category_name)
-            if rule := parse_rule(year, value):
-              self._rules[category][year] = rule
-          elif value.strip():
-            category = AssetCategory.from_name(col_name)
+          value = value.strip()
+          if not value:
+            continue
+
+          category = AssetCategory.from_name(col_name)
+          if rule := parse_rule(year, value):
+            self._rules[category][year] = rule
+          else:
             year_data[category] = float(value)
 
         if year_data:

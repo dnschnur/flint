@@ -146,11 +146,16 @@ class Budget:
   def _load_csv(self, path: str) -> None:
     """Load historical budget data from the given CSV file path.
 
+    Each non-Year column names a budget category, except for the special '529 Eligible' column.
+    Values are interpreted as rules if they parse as one (e.g. '+3%', '=20000'), or as fixed
+    historical amounts otherwise. A row advances _last_historical_year only if it contains at
+    least one fixed amount.
+
     Expected format:
-      Year,Housing,Health,Housing Rules,Health Rules,...
-      2020,1000,2000,,
-      2021,1100,2200,+5%,+10%
-      2022,,,+5%,+10%
+      Year,Housing,Health,529 Eligible,...
+      2025,30000,8000,
+      2030,,,-10%
+      2033,,,100%
     """
     with open(path, 'r') as f:
       reader = csv.DictReader(f)
@@ -167,18 +172,16 @@ class Budget:
             continue
 
           if col_name == '529 Eligible':
-            # Percentage of the School budget that can be paid from a 529 plan.
+            # Fraction of the School budget payable from a 529 plan.
             # Does not count as historical data; does not advance _last_historical_year.
             fraction = float(value[:-1]) / 100.0 if value.endswith('%') else float(value)
             self._529_eligible[year] = fraction
-          elif col_name.endswith(' Rules'):
-            category_name = col_name[:-6]  # Remove ' Rules' suffix
-            category = BudgetCategory.from_name(category_name)
-            if rule := parse_rule(year, value):
-              self._rules[category][year] = rule
           else:
             category = BudgetCategory.from_name(col_name)
-            year_data[category] = float(value)
+            if rule := parse_rule(year, value):
+              self._rules[category][year] = rule
+            else:
+              year_data[category] = float(value)
 
         if year_data:
           self._historical[year] = year_data
