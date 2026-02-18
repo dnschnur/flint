@@ -14,10 +14,37 @@ from rules import Rule, parse_rule
 class BudgetCategory(Enum):
   """Budget categories with associated properties."""
 
+  # Mortgage, rent, property taxes, homeowner's insurance, maintenance, home services.
   HOUSING = ('Housing', 0.03)
-  HEALTH = ('Health', 0.05)
-  SCHOOL = ('School', 0.04)
+
+  # Electricity, gas, water, internet, phone.
+  UTILITIES = ('Utilities', 0.04)
+
+  # Vehicle purchases or payments, insurance, fuel, maintenance.
+  TRANSPORTATION = ('Transportation', 0.04)
+
+  # Groceries, restaurants, alcohol, snacks, desserts.
   FOOD = ('Food', 0.03)
+
+  # Health insurance, medical and medication expenses.
+  HEALTH = ('Health', 0.05)
+
+  # Personal or children's tuition, supplies, room & board, after-school activities.
+  SCHOOL = ('School', 0.04)
+
+  # Child care (if not categorized as school), activities, supplies.
+  CHILDREN = ('Children', 0.04)
+
+  # Credit card and other debt payments not included in housing or transportation.
+  DEBT = ('Debt', 0.0)
+
+  # Expenses associated with operating a self-owned business.
+  BUSINESS = ('Business', 0.0)
+
+  # Any other expenses not included in the categories above.
+  OTHER = ('Other', 0.03)
+
+  # Contributions to asset classes.
   PRE_TAX_401K = ('Pre-Tax 401K', 0.02)
   AFTER_TAX_401K = ('After-Tax 401K', 0.02)
   PRE_TAX_ROTH_401K = ('Pre-Tax 401K (Roth)', 0.02)
