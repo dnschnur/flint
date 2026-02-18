@@ -105,16 +105,21 @@ class Income:
 
     for i in range(self._last_historical_year + 1, year + 1):
       rule = self._rules_job.get(i)
-      amount = rule.apply(amount) if rule else amount * (1 + self._default_job_increase_rate)
+      if rule:
+        amount = rule.apply(amount)
+        if rule.apply_growth:
+          amount *= 1 + self._default_job_increase_rate
+      else:
+        amount *= 1 + self._default_job_increase_rate
 
     return amount
 
   def _project_other_income(self, year: int) -> float:
     """Returns the projected other income for the given future year.
 
-    Unlike job income, other income has no default growth rate: if no rule
-    is set for a given year, the amount remains unchanged. Use explicit rules
-    to model rent increases, cost-of-living adjustments, etc.
+    Unlike job income, other income has no default growth rate: if no rule is set for a given year,
+    the amount remains unchanged. Rules that allow growth (rule.apply_growth=True) will still only
+    apply the rule itself — there is no default rate to compound on top of it.
     """
     if not self._last_historical_year:
       return 0.0

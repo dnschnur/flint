@@ -156,9 +156,8 @@ class Budget:
   def _project_category(self, category: BudgetCategory, year: int) -> float:
     """Returns the projected budget for a category in a future year.
 
-    Applies rules in order from the last historical year to the target year.
-
-    If no rule applies for a year, applies the default inflation rate.
+    Applies rules in order from the last historical year to the target year. Default inflation is
+    always applied unless a rule explicitly suppresses it (rule.apply_growth=False).
 
     Args:
       category: The budget category to project.
@@ -173,9 +172,16 @@ class Budget:
     amount = self._historical.get(self._last_historical_year, {}).get(category, 0.0)
     category_rules = self._rules.get(category, {})
 
-    # Project year by year, applying rules or default inflation
+    # Project year by year, applying rules and/or default inflation.
+    # If a rule exists, apply it; then apply inflation unless the rule suppresses it.
+    # If no rule exists, apply inflation unconditionally.
     for i in range(self._last_historical_year + 1, year + 1):
       rule = category_rules.get(i)
-      amount = rule.apply(amount) if rule else amount * (1 + category.inflation)
+      if rule:
+        amount = rule.apply(amount)
+        if rule.apply_growth:
+          amount *= 1 + category.inflation
+      else:
+        amount *= 1 + category.inflation
 
     return amount

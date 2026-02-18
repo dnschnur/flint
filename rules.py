@@ -4,13 +4,41 @@ Defines the Rule base class and concrete implementations, used to override defau
 inflation rates in CSV data files.
 
 Also provides parse_rule() to construct a Rule from a CSV rule string.
+
+Growth behavior
+---------------
+After a rule is applied, the caller may also apply a default growth or inflation rate. Each rule
+has an apply_growth property that controls this:
+
+  - SetAmount:          apply_growth defaults to False (the set value is treated as final)
+  - AdjustByPercentage: apply_growth defaults to True (the adjustment is a delta; growth follows)
+  - AdjustByAmount:     apply_growth defaults to True (the adjustment is a delta; growth follows)
+
+Either default can be overridden with a suffix on the rule string:
+  - "!" suppresses growth (apply_growth=False)
+  - "+" applies growth   (apply_growth=True)
+
+Examples:
+  "=20000"   SetAmount,          apply_growth=False  (fixed contribution, no compounding)
+  "=20000+"  SetAmount,          apply_growth=True   (set, then grow)
+  "-5000"    AdjustByAmount,     apply_growth=True   (reduce, then grow remainder)
+  "-5000!"   AdjustByAmount,     apply_growth=False  (reduce, no further growth)
+  "+3%"      AdjustByPercentage, apply_growth=True   (adjust, then grow)
+  "+3%!"     AdjustByPercentage, apply_growth=False  (adjust, no further growth)
 """
 
 from abc import ABC, abstractmethod
 
 
 class Rule(ABC):
-  """Base class for projection rules."""
+  """Base class for projection rules.
+
+  Attributes:
+    apply_growth: If True, the caller should apply the default growth/inflation rate after this
+      rule. Subclasses set a default; parse_rule() may override it via the ! or + suffix.
+  """
+
+  apply_growth: bool
 
   @abstractmethod
   def apply(self, previous: float) -> float:
@@ -18,7 +46,9 @@ class Rule(ABC):
 
 
 class SetAmount(Rule):
-  """Sets the amount to a fixed value."""
+  """Sets the amount to a fixed value. Does not apply growth by default."""
+
+  apply_growth = False
 
   def __init__(self, amount: float):
     self.amount = amount
@@ -29,7 +59,9 @@ class SetAmount(Rule):
 
 
 class AdjustByPercentage(Rule):
-  """Adjusts the previous year's amount by a percentage."""
+  """Adjusts the previous year's amount by a percentage. Applies growth by default."""
+
+  apply_growth = True
 
   def __init__(self, percentage: float):
     self.percentage = percentage
@@ -40,7 +72,9 @@ class AdjustByPercentage(Rule):
 
 
 class AdjustByAmount(Rule):
-  """Adjusts the previous year's amount by a fixed amount."""
+  """Adjusts the previous year's amount by a fixed amount. Applies growth by default."""
+
+  apply_growth = True
 
   def __init__(self, amount: float):
     self.amount = amount
@@ -54,12 +88,15 @@ def parse_rule(year: int, rule_str: str) -> Rule | None:
   """Parse a rule string from CSV format.
 
   Formats:
-    "=##.#"   -> SetAmount
-    "+##.#"   -> AdjustByAmount (positive)
-    "-##.#"   -> AdjustByAmount (negative)
-    "+##.#%"  -> AdjustByPercentage (positive)
-    "-##.#%"  -> AdjustByPercentage (negative)
+    "=##.#"   -> SetAmount          (apply_growth=False by default)
+    "+##.#"   -> AdjustByAmount     (apply_growth=True by default)
+    "-##.#"   -> AdjustByAmount     (apply_growth=True by default)
+    "+##.#%"  -> AdjustByPercentage (apply_growth=True by default)
+    "-##.#%"  -> AdjustByPercentage (apply_growth=True by default)
     ""        -> None (no rule)
+
+  Any rule string may end with "!" to suppress growth or "+" to apply growth, overriding
+  the rule type's default. The suffix is stripped before parsing the value.
 
   Args:
     year: The year the rule applies to (unused, retained for call-site clarity).
@@ -73,16 +110,28 @@ def parse_rule(year: int, rule_str: str) -> Rule | None:
 
   rule_str = rule_str.strip()
 
+  # Check for growth override suffix before parsing the value.
+  growth_override: bool | None = None
+  if rule_str.endswith('!'):
+    growth_override = False
+    rule_str = rule_str[:-1]
+  elif rule_str.endswith('+'):
+    growth_override = True
+    rule_str = rule_str[:-1]
+
   # SetAmount: =##.#
   if rule_str.startswith('='):
-    return SetAmount(float(rule_str[1:]))
-
+    rule = SetAmount(float(rule_str[1:]))
   # AdjustByPercentage: +##.#% or -##.#%
-  if rule_str.endswith('%'):
-    return AdjustByPercentage(float(rule_str[:-1]) / 100.0)
-
+  elif rule_str.endswith('%'):
+    rule = AdjustByPercentage(float(rule_str[:-1]) / 100.0)
   # AdjustByAmount: +##.# or -##.#
-  if rule_str.startswith(('+', '-')):
-    return AdjustByAmount(float(rule_str))
+  elif rule_str.startswith(('+', '-')):
+    rule = AdjustByAmount(float(rule_str))
+  else:
+    return None
 
-  return None
+  if growth_override is not None:
+    rule.apply_growth = growth_override
+
+  return rule
