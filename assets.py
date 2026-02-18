@@ -27,6 +27,7 @@ class AssetCategory(Enum):
   BONDS = ('Bonds', 0.04)
   PLAN_529 = ('529 Plan', 0.07)
   HSA = ('HSA', 0.06)
+  REAL_ESTATE = ('Real Estate', 0.03)
 
   def __init__(self, display_name: str, growth: float):
     self.display_name = display_name

@@ -51,11 +51,12 @@ _LIQUID_ASSET_CATEGORIES = {
 }
 
 # Asset categories excluded from the general proportional withdrawal pool during retirement.
-# These are reserved for specific expense categories (HSA for health, 529 for school) and
-# should not be drawn down for general expenses.
+# HSA and 529 are reserved for specific expense categories; Real Estate is illiquid and can
+# only be accessed via explicit rules (e.g. a downsizing rule that converts equity to cash).
 _RESERVED_ASSET_CATEGORIES = {
   AssetCategory.HSA,
   AssetCategory.PLAN_529,
+  AssetCategory.REAL_ESTATE,
 }
 
 
