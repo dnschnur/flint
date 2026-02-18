@@ -13,6 +13,7 @@ from datetime import datetime
 from assets import Assets, AssetCategory
 from budget import Budget
 from income import Income
+from output import print_assets_table, print_median_scenario_table, print_outcome_table, print_stats_table
 from rmd import RMD
 from simulation import Simulation
 
@@ -144,61 +145,16 @@ def main():
   # Find the median simulation result
   median_idx = sorted(range(len(totals)), key=lambda i: totals[i])[len(totals) // 2]
   median_result = results[median_idx]
-  median_historical_end = median_result.start_year + (args.end_year - args.start_year)
-
-  # Calculate the distribution of outcomes
-  bankrupt_count = sum(1 for total in totals if total < 0)
-  low_count = sum(1 for total in totals if 0 <= total < starting_total * 0.5)
-  high_count = sum(1 for total in totals if total > starting_total * 2)
-
-  bankrupt_pct = (bankrupt_count / len(totals)) * 100
-  low_pct = (low_count / len(totals)) * 100
-  high_pct = (high_count / len(totals)) * 100
 
   print('=' * 60)
   print(f'Retirement: Age {retirement_age} (year {args.start_year}) to age {end_age} (year {args.end_year})')
   print(f'Simulations run: {len(results)}')
   print()
 
-  print(f'Starting Assets in {args.start_year}')
-  print('-' * 60)
-  print(f'{"Category":<30} {'Value':>29}')
-  print('-' * 60)
-  for category in AssetCategory:
-    if starting_assets[category]:
-      print(f'{category.display_name:<30} {starting_assets[category]:>29,.0f}')
-  print('-' * 60)
-  print(f'{"TOTAL":<30} {starting_total:>29,.0f}')
-  print()
-
-  print('Overall Statistics')
-  print('-' * 60)
-  print(f'{"Metric":<30} {"Value":>29}')
-  print('-' * 60)
-  print(f'{"Minimum Total Assets":<30} {min_total:>29,.0f}')
-  print(f'{"Maximum Total Assets":<30} {max_total:>29,.0f}')
-  print(f'{"Median Total Assets":<30} {median_total:>29,.0f}')
-  print()
-
-  print(f'Median Scenario - Asset Breakdown ({median_result.start_year}–{median_historical_end})')
-  print('-' * 60)
-  print(f'{"Category":<30} {"Value":>29}')
-  print('-' * 60)
-  for category in AssetCategory:
-    if value := median_result.assets[category]:
-      print(f'{category.display_name:<30} {value:>29,.0f}')
-  print('-' * 60)
-  print(f'{"TOTAL":<30} {median_total:>29,.0f}')
-  print()
-
-  print('Outcome Distribution')
-  print('-' * 60)
-  print(f'{"Outcome":<30} {"Percentage":>29}')
-  print('-' * 60)
-  print(f'{"Bankrupt":<30} {bankrupt_pct:>28.1f}%')
-  print(f'{"Low  (< 50% of start)":<30} {low_pct:>28.1f}%')
-  print(f'{"High (> 200% of start)":<30} {high_pct:>28.1f}%')
-  print()
+  print_assets_table(f'Starting Assets in {args.start_year}', starting_assets)
+  print_stats_table(min_total, max_total, median_total)
+  print_median_scenario_table(median_result, args.end_year, args.start_year)
+  print_outcome_table(len(results), starting_total, totals)
 
 
 if __name__ == '__main__':
