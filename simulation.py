@@ -130,7 +130,7 @@ class Simulation:
 
       new_assets = defaultdict(float)
       for category, value in current_assets.items():
-        new_assets[category] = value * (1 + category.growth)
+        new_assets[category] = self.assets.apply_year(category, year + 1, value)
 
       current_assets = new_assets
       yield year, current_assets
@@ -259,10 +259,8 @@ class Simulation:
 
         new_assets = {}
         for category, value in current_assets.items():
-          if category in _STOCK_LIKE_ASSETS:
-            new_assets[category] = value * (1 + sp500_return)
-          else:
-            new_assets[category] = value * (1 + category.growth)
+          growth_rate = sp500_return if category in _STOCK_LIKE_ASSETS else None
+          new_assets[category] = self.assets.apply_year(category, year + 1, value, growth_rate)
 
         current_assets = new_assets
         current_historical_year = next_historical_year

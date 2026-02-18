@@ -131,11 +131,41 @@ class Assets:
           if not self._last_historical_year or year > self._last_historical_year:
             self._last_historical_year = year
 
+  def apply_year(
+    self, category: AssetCategory, year: int, amount: float, growth_rate: float | None = None
+  ) -> float:
+    """Apply one year's rule (if any) and growth to an asset balance.
+
+    This is used by the simulation loops to advance each category's balance by a single year,
+    respecting any rules defined for that year. Unlike _project_category, it operates on an
+    externally-supplied balance rather than replaying from historical data — so it correctly
+    handles balances that have been modified by income, withdrawals, and contributions.
+
+    Args:
+      category: The asset category being advanced.
+      year: The year being applied (rules for this year are consulted).
+      amount: The current balance before this year's rule and growth.
+      growth_rate: Growth rate to apply. Defaults to category.growth if not specified. Pass an
+          explicit rate (e.g. S&P 500 return) to override the default for stock-like assets.
+
+    Returns:
+      The updated balance after applying any rule and growth.
+    """
+    rate = growth_rate if growth_rate is not None else category.growth
+    rule = self._rules.get(category, {}).get(year)
+    if rule:
+      amount = rule.apply(amount)
+      if rule.apply_growth:
+        amount *= 1 + rate
+    else:
+      amount *= 1 + rate
+    return amount
+
   def _project_category(self, category: AssetCategory, year: int) -> float:
     """Returns the projected assets for a category in a future year.
 
-    Applies rules in order from the last historical year to the target year. Default growth is
-    always applied unless a rule explicitly suppresses it (rule.apply_growth=False).
+    Applies rules in order from the last historical year to the target year, delegating each
+    year's step to apply_year(). Default growth is always applied unless a rule suppresses it.
 
     Args:
       category: The asset category to project.
@@ -148,18 +178,6 @@ class Assets:
       return 0.0
 
     amount = self._historical.get(self._last_historical_year, {}).get(category, 0.0)
-    category_rules = self._rules.get(category, {})
-
-    # Project year by year, applying rules and/or default growth.
-    # If a rule exists, apply it; then apply growth unless the rule suppresses it.
-    # If no rule exists, apply growth unconditionally.
     for i in range(self._last_historical_year + 1, year + 1):
-      rule = category_rules.get(i)
-      if rule:
-        amount = rule.apply(amount)
-        if rule.apply_growth:
-          amount *= 1 + category.growth
-      else:
-        amount *= 1 + category.growth
-
+      amount = self.apply_year(category, i, amount)
     return amount
