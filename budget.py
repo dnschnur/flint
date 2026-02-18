@@ -96,6 +96,10 @@ class Budget:
     # Rules mapping from (category, year) to rule
     self._rules: defaultdict[BudgetCategory, dict[int, Rule]] = defaultdict(dict)
 
+    # Fraction of the School budget eligible to be paid from a 529 plan, by year.
+    # Unlike historical data, entries here do not advance _last_historical_year.
+    self._529_eligible: dict[int, float] = {}
+
     self._load_csv(path)
 
   @cache
@@ -120,6 +124,25 @@ class Budget:
 
     return sum(self.get_category(category, year) for category in categories)
 
+  @cache
+  def get_529_eligible_fraction(self, year: int) -> float:
+    """Returns the fraction of the School budget eligible to be paid from a 529 plan.
+
+    Uses step-function semantics: the last entry at or before the given year stays in effect
+    until a newer entry overrides it. Returns 0.0 if no entry exists at or before that year.
+
+    Args:
+      year: The year to look up.
+
+    Returns:
+      A value between 0.0 and 1.0.
+    """
+    fraction = 0.0
+    for entry_year, entry_fraction in self._529_eligible.items():
+      if entry_year <= year:
+        fraction = entry_fraction
+    return fraction
+
   def _load_csv(self, path: str) -> None:
     """Load historical budget data from the given CSV file path.
 
@@ -139,12 +162,21 @@ class Budget:
           if col_name == 'Year':
             continue
 
-          if col_name.endswith(' Rules'):
+          value = value.strip()
+          if not value:
+            continue
+
+          if col_name == '529 Eligible':
+            # Percentage of the School budget that can be paid from a 529 plan.
+            # Does not count as historical data; does not advance _last_historical_year.
+            fraction = float(value[:-1]) / 100.0 if value.endswith('%') else float(value)
+            self._529_eligible[year] = fraction
+          elif col_name.endswith(' Rules'):
             category_name = col_name[:-6]  # Remove ' Rules' suffix
             category = BudgetCategory.from_name(category_name)
             if rule := parse_rule(year, value):
               self._rules[category][year] = rule
-          elif value.strip():
+          else:
             category = BudgetCategory.from_name(col_name)
             year_data[category] = float(value)
 
