@@ -15,6 +15,7 @@ from budget import Budget, BudgetCategory
 from income import Income
 from rmd import RMD
 from strategy import Strategy
+from tax import Tax
 
 
 # Asset categories that track S&P 500 performance
@@ -50,6 +51,7 @@ class Simulation:
     budget: Budget,
     income: Income,
     rmd: RMD,
+    tax: Tax,
     current_age: int,
     data_year: int,
     sp500_path: str,
@@ -63,6 +65,7 @@ class Simulation:
       budget: Budget with historical and projected values.
       income: Income tracker with historical and projected values.
       rmd: RMD calculator for required minimum distributions.
+      tax: Tax calculator for income and capital gains tax.
       current_age: Current age of the person.
       data_year: The year corresponding to current_age. This is the anchor year from which ages and
           projections are calculated; it should match the latest historical year across the assets,
@@ -74,7 +77,7 @@ class Simulation:
     self.assets = assets
     self.budget = budget
     self.income = income
-    self.strategy = Strategy(rmd=rmd)
+    self.strategy = Strategy(rmd=rmd, tax=tax)
     self.current_age = current_age
     self.data_year = data_year
 
@@ -238,9 +241,15 @@ class Simulation:
     """
     current_assets = defaultdict(float, starting_assets)
     current_historical_year = historical_start_year
+    retirement_length = end_year - start_year
 
     for year in range(start_year, end_year + 1):
       age = self.current_age + (year - self.data_year)
+
+      # Capital gains fraction ramps linearly from 0 at retirement start to 1 at the end.
+      # This models the idea that assets held longer into retirement have a higher proportion
+      # of gains relative to basis. Might be worth making this more sophisticated eventually.
+      cg_fraction = (year - start_year) / retirement_length if retirement_length else 0.0
 
       year_income = self.income.get(year, retired=True)
       year_budget = {}
@@ -250,7 +259,8 @@ class Simulation:
 
       current_assets = self.strategy.apply(
         year, current_assets, year_income, year_budget, retired=True, age=age,
-        eligible_529=self.budget.get_529_eligible_fraction(year)
+        eligible_529=self.budget.get_529_eligible_fraction(year),
+        cg_fraction=cg_fraction
       )
 
       if year < end_year:  # Don't grow in the final year

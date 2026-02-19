@@ -16,39 +16,56 @@ from income import Income
 from output import print_assets_table, print_median_scenario_table, print_outcome_table, print_stats_table
 from rmd import RMD
 from simulation import Simulation
+from tax import Tax
 
 
-def _resolve_data_paths(scenario: str | None) -> tuple[str, str, str]:
-  """Resolve the paths to assets, budget, and income CSV files.
+def _resolve_data_paths(scenario: str | None) -> tuple[str, str, str, str, str]:
+  """Resolve the paths to assets, budget, income, and tax CSV files.
 
-  If a scenario name is provided, the files are read from data/<scenario>/, otherwise from data/.
+  Required files (assets, budget, income) are read from data/<scenario>/ when a scenario is
+  given, with a hard error if any are missing. Tax files (income_tax, capital_gains_tax) are
+  optional per-scenario: the scenario's copy is used if present, otherwise data/ defaults.
 
   Args:
     scenario: Name of the scenario subdirectory under data/, or None.
 
   Returns:
-    A tuple of (assets_path, budget_path, income_path).
+    A tuple of (assets_path, budget_path, income_path, income_tax_path, capital_gains_tax_path).
 
   Raises:
     FileNotFoundError: If any required files are missing from the scenario directory.
   """
   if scenario:
     directory = os.path.join('data', scenario)
-    paths = (
+    required = (
       os.path.join(directory, 'assets.csv'),
       os.path.join(directory, 'budget.csv'),
       os.path.join(directory, 'income.csv'),
     )
 
-    missing = [path for path in paths if not os.path.exists(path)]
+    missing = [path for path in required if not os.path.exists(path)]
     if missing:
       raise FileNotFoundError(
         f'Scenario "{scenario}" is missing required files: {", ".join(missing)}'
       )
 
-    return paths
+    def _scenario_or_default(filename):
+      scenario_path = os.path.join(directory, filename)
+      return scenario_path if os.path.exists(scenario_path) else os.path.join('data', filename)
 
-  return 'data/assets.csv', 'data/budget.csv', 'data/income.csv'
+    return (
+      *required,
+      _scenario_or_default('income_tax.csv'),
+      _scenario_or_default('capital_gains_tax.csv'),
+    )
+
+  return (
+    'data/assets.csv',
+    'data/budget.csv',
+    'data/income.csv',
+    'data/income_tax.csv',
+    'data/capital_gains_tax.csv',
+  )
 
 
 def main():
@@ -97,7 +114,7 @@ def main():
   args = parser.parse_args()
 
   try:
-    assets_path, budget_path, income_path = _resolve_data_paths(args.scenario)
+    assets_path, budget_path, income_path, income_tax_path, capital_gains_tax_path = _resolve_data_paths(args.scenario)
   except FileNotFoundError as e:
     parser.error(str(e))
 
@@ -114,11 +131,14 @@ def main():
     income._last_historical_year or current_year
   )
 
+  tax = Tax(income_tax_path, capital_gains_tax_path, data_year=2025)
+
   sim = Simulation(
     assets=assets,
     budget=budget,
     income=income,
     rmd=rmd,
+    tax=tax,
     current_age=current_age,
     data_year=data_year,
     sp500_path='data/sp500.csv',

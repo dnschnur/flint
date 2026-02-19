@@ -9,6 +9,7 @@ from collections import defaultdict
 from assets import AssetCategory
 from budget import BudgetCategory
 from rmd import RMD
+from tax import Tax
 
 
 # Mapping from budget categories to corresponding asset categories
@@ -23,6 +24,14 @@ _BUDGET_TO_ASSET_CATEGORIES = {
   BudgetCategory.HSA: AssetCategory.HSA,
   BudgetCategory.STOCKS: AssetCategory.STOCKS,
   BudgetCategory.BONDS: AssetCategory.BONDS,
+}
+
+# Budget categories that represent pre-tax contributions. Income is allocated to these
+# first, before income tax is applied, since they reduce taxable income.
+_PRE_TAX_CONTRIBUTION_CATEGORIES = {
+  BudgetCategory.PRE_TAX_401K,
+  BudgetCategory.PRE_TAX_ROTH_401K,
+  BudgetCategory.IRA,
 }
 
 # Budget categories that represent retirement account contributions.
@@ -59,6 +68,50 @@ _RESERVED_ASSET_CATEGORIES = {
   AssetCategory.PLAN_529,
   AssetCategory.REAL_ESTATE,
 }
+
+# Asset categories whose retirement withdrawals are taxed as ordinary income.
+# Roth accounts are excluded as withdrawals from them are tax-free.
+_ORDINARY_INCOME_ASSET_CATEGORIES = {
+  AssetCategory.PLAN_401K,
+  AssetCategory.IRA,
+}
+
+# Asset categories whose retirement withdrawals include a capital gains component.
+# The CG fraction grows linearly from 0 at the start of retirement to 1 at the end.
+_CAPITAL_GAINS_ASSET_CATEGORIES = {
+  AssetCategory.STOCKS,
+}
+
+
+def _withdrawal_multiplier(
+  category: AssetCategory,
+  tax: Tax,
+  taxable_income: float,
+  year: int,
+  cg_fraction: float
+) -> float:
+  """Returns the gross-up multiplier for a withdrawal from the given asset category.
+
+  To net $X from an asset after tax, the gross withdrawal is X * multiplier. The excess
+  (multiplier - 1) * X represents the tax paid, which is lost rather than credited anywhere.
+
+  Args:
+    category: The asset category being withdrawn from.
+    tax: Tax calculator for rate lookups.
+    taxable_income: Current taxable income level, used to find the marginal rate.
+    year: The tax year.
+    cg_fraction: Fraction of the withdrawal treated as capital gains.
+
+  Returns:
+    Gross-up multiplier >= 1.0.
+  """
+  if category in _CAPITAL_GAINS_ASSET_CATEGORIES and cg_fraction:
+    rate = tax.marginal_rate(taxable_income, year, capital_gains=True)
+    return 1.0 + cg_fraction * rate
+  if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
+    rate = tax.marginal_rate(taxable_income, year, capital_gains=False)
+    return 1.0 + rate
+  return 1.0
 
 
 def _apply_529_withdrawal(
@@ -101,7 +154,8 @@ def _apply_hsa_withdrawal(
   """Withdraw from HSA to cover a health expense shortfall.
 
   Only draws from the HSA when there is an actual funding shortfall, up to the health
-  budget and available HSA balance.
+  budget and available HSA balance. HSA withdrawals for qualified medical expenses are
+  tax-free, so no gross-up is applied.
 
   Modifies new_assets in place and returns the remaining shortfall.
 
@@ -133,13 +187,15 @@ class Strategy:
   RMDs (Required Minimum Distributions) are withdrawn first before other asset allocation logic.
   """
 
-  def __init__(self, rmd: RMD):
+  def __init__(self, rmd: RMD, tax: Tax):
     """Initialize the strategy.
 
     Args:
       rmd: RMD calculator for required minimum distributions.
+      tax: Tax calculator for income and capital gains tax.
     """
     self.rmd = rmd
+    self.tax = tax
 
   def apply(
     self,
@@ -149,39 +205,46 @@ class Strategy:
     budget: dict[BudgetCategory, float],
     retired: bool = False,
     age: int = 0,
-    eligible_529: float = 0.0
+    eligible_529: float = 0.0,
+    cg_fraction: float = 0.0
   ) -> defaultdict[AssetCategory, float]:
-    """Returns updated asset values after applying income and budget for the year.
+    """Returns updated asset values after applying income, tax, and budget for the year.
 
     Processing order:
-      1. Calculate and withdraw RMDs from applicable accounts
-      2. Add regular income
-      3. Process budget items (contributions and expenses)
+      1. Calculate and withdraw RMDs from applicable accounts (adds to income)
+      2. Make pre-tax contributions (reduces taxable income)
+      3. Apply ordinary income tax on post-contribution income
       4. Withdraw from 529 to cover 529-eligible school expenses (always, to avoid waste)
-      5. If there's a shortfall:
-         a. Withdraw from HSA to cover health expenses
+      5. Process remaining budget items (expenses and after-tax contributions)
+      6. If there's a shortfall:
+         a. Withdraw from HSA to cover health expenses (tax-free)
          b. Cover any remaining shortfall:
-            - Pre-retirement: from Cash → Bonds → Stocks; raise if still insufficient
-            - Retirement: proportionally from all non-Cash, non-HSA, non-529 assets;
-              any uncovered remainder falls to Cash (which may go negative)
+            - Pre-retirement: from Cash → Bonds → Stocks
+            - Retirement: proportionally from non-Cash, non-reserved assets, grossed up for
+              tax. Any uncovered remainder falls to Cash, which may go negative.
 
     During pre-retirement (retired=False):
-      - Income is used to cover expenses and make contributions
-      - Remaining income goes to cash
-      - If expenses exceed income, uses priority-based withdrawal from liquid assets
+      - Pre-tax contributions are made and income is taxed on the remainder
+      - Remaining post-tax income covers expenses; surplus goes to cash
+      - If expenses exceed post-tax income, draws from liquid assets (no tax gross-up)
 
     During retirement (retired=True):
-      - Only non-retirement budget categories are processed
-      - If income doesn't cover expenses, withdraws proportionally from non-reserved assets
+      - No contributions are made
+      - Income (including RMDs) is taxed; surplus covers expenses
+      - Shortfalls are covered by proportional withdrawal from the general asset pool,
+        grossed up for tax: 401K/IRA by the ordinary marginal rate, Stocks by
+        cg_fraction * capital_gains_marginal_rate
 
     Args:
       year: The year to apply the strategy.
       assets: Current asset values by category.
       income: Total income for the year.
       budget: Budget expenditures by category for the year.
-      retired: If True, indicates post-retirement (affects income calculation).
+      retired: If True, indicates post-retirement (affects contribution and withdrawal logic).
       age: Current age.
       eligible_529: Fraction of the school budget payable from the 529 plan.
+      cg_fraction: Fraction of stock/asset withdrawals treated as capital gains. Should be
+          0.0 pre-retirement, ramping from 0.0 to 1.0 linearly over retirement.
 
     Returns:
       Updated asset values after applying income and budget.
@@ -192,7 +255,7 @@ class Strategy:
     # Start with a copy of current assets, defaulting missing categories to 0.0.
     new_assets: defaultdict[AssetCategory, float] = defaultdict(float, assets)
 
-    # Calculate and withdraw RMDs first
+    # Calculate and withdraw RMDs first; they count as ordinary income.
     rmd_income = 0.0
     for asset_category in _RMD_CATEGORIES:
       if new_assets[asset_category] > 0:
@@ -203,10 +266,25 @@ class Strategy:
 
     remaining = income + rmd_income
 
+    # Make pre-tax contributions first (pre-retirement only).
+    # These reduce taxable income since they come out of gross income before tax.
+    if not retired:
+      for category, amount in budget.items():
+        if category in _PRE_TAX_CONTRIBUTION_CATEGORIES:
+          new_assets[_BUDGET_TO_ASSET_CATEGORIES[category]] += amount
+          remaining -= amount
+
+    # Apply ordinary income tax on the post-contribution income.
+    # Track taxable_income for use in withdrawal gross-up calculations later.
+    taxable_income = remaining
+    remaining -= self.tax.calculate(taxable_income, year)
+
+    # Process remaining budget items (expenses and after-tax contributions).
     for category, amount in budget.items():
-      # Skip retirement account contributions during retirement
+      if category in _PRE_TAX_CONTRIBUTION_CATEGORIES:
+        continue  # Already handled previously
       if retired and category in _RETIREMENT_CONTRIBUTION_CATEGORIES:
-        continue
+        continue  # No contributions during retirement
 
       if category in _BUDGET_TO_ASSET_CATEGORIES:
         new_assets[_BUDGET_TO_ASSET_CATEGORIES[category]] += amount
@@ -214,17 +292,18 @@ class Strategy:
 
     # Always withdraw 529-eligible school expenses from the 529 plan, regardless of whether income
     # covers them. This prevents 529 assets from being wasted if they aren't needed for general
-    # expenses. The withdrawal is credited back to remaining to reduce any shortfall (or surplus).
+    # expenses. The withdrawal is credited back to remaining.
     remaining += _apply_529_withdrawal(new_assets, budget, eligible_529)
 
-    # If remaining is negative, we need to withdraw from assets
+    # If remaining is negative, we need to withdraw from assets.
     if remaining < 0:
       shortfall = -remaining
 
+      # HSA covers health expenses first (tax-free, no gross-up).
       shortfall = _apply_hsa_withdrawal(new_assets, budget, shortfall)
 
       if not retired:
-        # Pre-retirement: withdraw remaining shortfall from liquid assets in priority order
+        # Pre-retirement: withdraw from liquid assets in priority order.
         if shortfall:
           for asset_category in _LIQUID_ASSET_CATEGORIES:
             if shortfall <= 0:
@@ -243,10 +322,10 @@ class Strategy:
 
         remaining = 0
       else:
-        # Retirement: withdraw proportionally from non-cash, non-reserved assets, clamping each to
-        # zero. Any remainder that can't be covered falls through to Cash, which is the only
-        # category allowed to go negative. HSA and 529 are excluded from this pool since they are
-        # reserved for their designated expense categories.
+        # Retirement: withdraw proportionally from non-cash, non-reserved assets. Each asset
+        # is grossed up for tax, so proportional allocation is based on effective (post-tax)
+        # balances. The gross withdrawal is larger; the net credited against the shortfall is
+        # the needed amount, and the tax difference is lost.
         general_pool = {
           category: balance
           for category, balance in new_assets.items()
@@ -255,21 +334,30 @@ class Strategy:
           and balance > 0
         }
 
-        total_pool = sum(general_pool.values())
+        # Compute each asset's tax multiplier and effective (post-tax) balance.
+        multipliers = {
+          category: _withdrawal_multiplier(category, self.tax, taxable_income, year, cg_fraction)
+          for category in general_pool
+        }
+        effective_pool = {
+          category: balance / multipliers[category]
+          for category, balance in general_pool.items()
+        }
+        total_effective = sum(effective_pool.values())
 
-        if total_pool:
-          # Withdraw proportionally from each asset, using the original shortfall for all
-          # proportion calculations so each asset's share is computed independently.
-          # If an asset can't cover its proportional share, take its full balance;
-          # any uncovered remainder falls to Cash.
+        if total_effective:
+          # Allocate proportionally by effective balance so each asset contributes equally
+          # in post-tax terms. Gross up actual withdrawal to cover the tax cost.
           original_shortfall = shortfall
           for category, balance in general_pool.items():
-            proportion = balance / total_pool
-            withdrawal = min(balance, original_shortfall * proportion)
-            new_assets[category] = balance - withdrawal
-            shortfall -= withdrawal
+            effective_balance = effective_pool[category]
+            proportion = effective_balance / total_effective
+            net_needed = min(effective_balance, original_shortfall * proportion)
+            gross_withdrawal = net_needed * multipliers[category]
+            new_assets[category] = balance - gross_withdrawal
+            shortfall -= net_needed
 
-        # Any remaining shortfall comes from Cash (may go negative)
+        # Any remaining shortfall comes from Cash (may go negative).
         remaining = -shortfall
 
     new_assets[AssetCategory.CASH] += remaining
