@@ -1,4 +1,4 @@
-"""Federal income tax calculation with bracket projection.
+"""Federal and state income tax calculation with bracket projection.
 
 Loads tax brackets for ordinary income and long-term capital gains from two CSV files. This data is
 for a single tax year; the thresholds are projected forward to future years using a fixed annual
@@ -8,9 +8,14 @@ For now, all brackets are assumed to be for the "Married Filing Jointly" filing 
 
 Capital gains brackets support an optional 'Inflation Adjusted' column. Brackets marked 'No', such
 as the NIIT threshold, which is set by statute, are not projected forward.
+
+An optional state income tax file may be provided. When present, state rates are combined with
+federal rates for ordinary income calculations.
 """
 
 import csv
+
+from util import DataPaths
 
 
 # Annual growth rate applied to inflation-adjusted bracket thresholds when projecting to
@@ -26,76 +31,38 @@ def _parse_rate(value: str) -> float:
 
 
 class Tax:
-  """Progressive federal income tax calculator with forward bracket projection."""
+  """Progressive federal and state income tax calculator with forward bracket projection.
 
-  def __init__(self, income_tax_path: str, capital_gains_tax_path: str, data_year: int):
+  Optionally combines federal ordinary income tax with a state income tax. Capital gains tax
+  remains federal-only.
+  """
+
+  def __init__(self, paths: DataPaths, data_year: int):
     """Initialize and load tax bracket data.
 
     Args:
-      income_tax_path: Path to the ordinary income tax CSV file.
-      capital_gains_tax_path: Path to the long-term capital gains tax CSV file.
+      paths: Resolved data file paths. Uses income_tax, capital_gains_tax, and
+          state_income_tax (if set).
       data_year: The tax year of the data in the CSV files.
     """
     self.data_year = data_year
 
     # List of (income_threshold, rate) tuples, sorted ascending by threshold.
-    self._income_brackets: list[tuple[float, float]] = []
+    self._income_brackets: list[tuple[float, float]] = self._load_bracket_list(paths.income_tax)
 
     # List of (income_threshold, rate, inflation_adjusted) tuples, sorted ascending.
-    self._cg_brackets: list[tuple[float, float, bool]] = []
+    self._cg_brackets: list[tuple[float, float, bool]] = self._load_capital_gains_csv(
+        paths.capital_gains_tax)
 
-    self._load_income_csv(income_tax_path)
-    self._load_capital_gains_csv(capital_gains_tax_path)
-
-  def _project_brackets(self, year: int, capital_gains: bool) -> list[tuple[float, float]]:
-    """Return brackets with thresholds projected to the given year.
-
-    Args:
-      year: The target tax year.
-      capital_gains: If True, project capital gains brackets; otherwise ordinary income.
-
-    Returns:
-      List of (threshold, rate) tuples sorted ascending by threshold.
-    """
-    growth_factor = (1 + _BRACKET_GROWTH) ** (year - self.data_year)
-    if capital_gains:
-      return [
-        (threshold * growth_factor if inflation_adjusted else threshold, rate)
-        for threshold, rate, inflation_adjusted in self._cg_brackets
-      ]
-    return [(threshold * growth_factor, rate) for threshold, rate in self._income_brackets]
-
-  def marginal_rate(self, amount: float, year: int, capital_gains: bool = False) -> float:
-    """Returns the marginal tax rate (bracket rate) for the given income amount and year.
-
-    Useful for gross-up calculations where the tax on a marginal withdrawal needs to be
-    estimated based on the taxpayer's current income level.
-
-    Args:
-      amount: The income level at which to look up the marginal rate.
-      year: The tax year.
-      capital_gains: If True, look up the capital gains rate; otherwise ordinary rate.
-
-    Returns:
-      The marginal tax rate as a decimal (e.g. 0.24 for 24%).
-    """
-    if amount <= 0:
-      return 0.0
-
-    brackets = self._project_brackets(year, capital_gains)
-    rate = brackets[0][1]
-    for threshold, bracket_rate in brackets:
-      if amount >= threshold:
-        rate = bracket_rate
-      else:
-        break
-    return rate
+    # State income brackets as (threshold, rate) tuples, or empty if no state is loaded.
+    self._state_income_brackets: list[tuple[float, float]] = (
+      self._load_bracket_list(paths.state_income_tax) if paths.state_income_tax else []
+    )
 
   def calculate(self, amount: float, year: int, capital_gains: bool = False) -> float:
     """Calculate progressive tax on an amount for a given year.
 
-    Projects inflation-adjusted bracket thresholds from the base year to the target year
-    using _BRACKET_GROWTH, then computes tax progressively across brackets.
+    For ordinary income, combines federal and any loaded state taxes.
 
     Args:
       amount: Taxable income amount.
@@ -107,11 +74,39 @@ class Tax:
     """
     if amount <= 0:
       return 0.0
+    total = self._calculate_from_brackets(self._project_brackets(year, capital_gains), amount)
+    if not capital_gains and self._state_income_brackets:
+      total += self._calculate_from_brackets(
+        self._project_bracket_list(self._state_income_brackets, year), amount
+      )
+    return total
 
-    brackets = self._project_brackets(year, capital_gains)
+  def marginal_rate(self, amount: float, year: int, capital_gains: bool = False) -> float:
+    """Returns the marginal tax rate for the given income amount and year.
+
+    For ordinary income, combines the federal marginal rate with any loaded state marginal rates.
+
+    Args:
+      amount: The income level at which to look up the marginal rate.
+      year: The tax year.
+      capital_gains: If True, look up the capital gains rate; otherwise ordinary rate.
+
+    Returns:
+      The combined marginal tax rate as a decimal (e.g. 0.24 for 24%).
+    """
+    if amount <= 0:
+      return 0.0
+    rate = self._marginal_from_brackets(self._project_brackets(year, capital_gains), amount)
+    if not capital_gains and self._state_income_brackets:
+      rate += self._marginal_from_brackets(
+        self._project_bracket_list(self._state_income_brackets, year), amount
+      )
+    return rate
+
+  def _calculate_from_brackets(self, brackets: list[tuple[float, float]], amount: float) -> float:
+    """Calculate progressive tax for the given amount from a projected bracket list."""
     total_tax = 0.0
     remaining = amount
-
     for i, (threshold, rate) in enumerate(brackets):
       next_threshold = brackets[i + 1][0] if i + 1 < len(brackets) else float('inf')
       taxable_in_bracket = min(remaining, next_threshold - threshold)
@@ -121,11 +116,10 @@ class Tax:
       remaining -= taxable_in_bracket
       if remaining <= 0:
         break
-
     return total_tax
 
-  def _load_income_csv(self, path: str) -> None:
-    """Load ordinary income bracket data from a CSV file.
+  def _load_bracket_list(self, path: str) -> list[tuple[float, float]]:
+    """Load a simple Income,Rate CSV and return sorted (threshold, rate) pairs.
 
     Expected format:
       Income,Rate
@@ -135,14 +129,19 @@ class Tax:
 
     Args:
       path: Path to the CSV file.
+
+    Returns:
+      List of (income_threshold, rate) tuples sorted ascending by threshold.
     """
+    brackets = []
     with open(path, 'r') as f:
       reader = csv.DictReader(f)
       for row in reader:
         income = float(row['Income'].replace(',', ''))
         rate = _parse_rate(row['Rate'])
-        self._income_brackets.append((income, rate))
-    self._income_brackets.sort(key=lambda b: b[0])
+        brackets.append((income, rate))
+    brackets.sort(key=lambda b: b[0])
+    return brackets
 
   def _load_capital_gains_csv(self, path: str) -> None:
     """Load long-term capital gains bracket data from a CSV file.
@@ -159,11 +158,56 @@ class Tax:
     Args:
       path: Path to the CSV file.
     """
+    brackets = []
     with open(path, 'r') as f:
       reader = csv.DictReader(f)
       for row in reader:
         income = float(row['Income'].replace(',', ''))
         rate = _parse_rate(row['Rate'])
         inflation_adjusted = row.get('Inflation Adjusted', 'Yes').strip().lower() != 'no'
-        self._cg_brackets.append((income, rate, inflation_adjusted))
-    self._cg_brackets.sort(key=lambda b: b[0])
+        brackets.append((income, rate, inflation_adjusted))
+    brackets.sort(key=lambda b: b[0])
+    return brackets
+
+  def _marginal_from_brackets(self, brackets: list[tuple[float, float]], amount: float) -> float:
+    """Return the marginal rate for the given amount from a projected bracket list."""
+    rate = brackets[0][1]
+    for threshold, bracket_rate in brackets:
+      if amount >= threshold:
+        rate = bracket_rate
+      else:
+        break
+    return rate
+
+  def _project_bracket_list(
+    self, brackets: list[tuple[float, float]], year: int
+  ) -> list[tuple[float, float]]:
+    """Project a simple (threshold, rate) bracket list forward to the given year.
+
+    Args:
+      brackets: List of (threshold, rate) tuples.
+      year: The target tax year.
+
+    Returns:
+      Projected list with thresholds scaled by the growth factor.
+    """
+    growth_factor = (1 + _BRACKET_GROWTH) ** (year - self.data_year)
+    return [(threshold * growth_factor, rate) for threshold, rate in brackets]
+
+  def _project_brackets(self, year: int, capital_gains: bool) -> list[tuple[float, float]]:
+    """Return brackets with thresholds projected to the given year.
+
+    Args:
+      year: The target tax year.
+      capital_gains: If True, project capital gains brackets; otherwise ordinary income.
+
+    Returns:
+      List of (threshold, rate) tuples sorted ascending by threshold.
+    """
+    if capital_gains:
+      growth_factor = (1 + _BRACKET_GROWTH) ** (year - self.data_year)
+      return [
+        (threshold * growth_factor if inflation_adjusted else threshold, rate)
+        for threshold, rate, inflation_adjusted in self._cg_brackets
+      ]
+    return self._project_bracket_list(self._income_brackets, year)
