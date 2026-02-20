@@ -202,8 +202,8 @@ def main():
   starting_assets = None
   for year, assets_snapshot in sim.project_pre_retirement(args.start_year):
     if args.verbose:
-      age = args.age + (year - data_year)
-      print_assets_table(f'Pre-Retirement: Year {year} (Age {age})', assets_snapshot)
+      age = args.age + (year + 1 - data_year)
+      print_assets_table(f'Pre-Retirement: Year {year + 1} (Age {age})', assets_snapshot)
     starting_assets = assets_snapshot
   starting_total = sum(starting_assets.values())
 
