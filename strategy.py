@@ -69,6 +69,14 @@ _RESERVED_ASSET_CATEGORIES = {
   AssetCategory.REAL_ESTATE,
 }
 
+# Roth asset categories excluded from the general pool and only drawn as a last resort.
+# These accounts grow completely tax-free, Roth IRA has no RMDs, and withdrawals are tax-free,
+# making them the most valuable accounts to preserve for as long as possible.
+_ROTH_ASSET_CATEGORIES = {
+  AssetCategory.ROTH_401K,
+  AssetCategory.ROTH_IRA,
+}
+
 # Asset categories whose retirement withdrawals are taxed as ordinary income.
 # Roth accounts are excluded as withdrawals from them are tax-free.
 _ORDINARY_INCOME_ASSET_CATEGORIES = {
@@ -322,7 +330,8 @@ class Strategy:
 
         remaining = 0
       else:
-        # Retirement: withdraw proportionally from non-cash, non-reserved assets. Each asset
+        # Retirement: withdraw proportionally from non-cash, non-reserved, non-Roth assets.
+        # Roth accounts are excluded here and only tapped as a last resort below. Each asset
         # is grossed up for tax, so proportional allocation is based on effective (post-tax)
         # balances. The gross withdrawal is larger; the net credited against the shortfall is
         # the needed amount, and the tax difference is lost.
@@ -331,6 +340,7 @@ class Strategy:
           for category, balance in new_assets.items()
           if category != AssetCategory.CASH
           and category not in _RESERVED_ASSET_CATEGORIES
+          and category not in _ROTH_ASSET_CATEGORIES
           and balance > 0
         }
 
@@ -356,6 +366,23 @@ class Strategy:
             gross_withdrawal = net_needed * multipliers[category]
             new_assets[category] = balance - gross_withdrawal
             shortfall -= net_needed
+
+        # If the general pool couldn't cover the full shortfall, draw from Roth accounts as
+        # a last resort (tax-free withdrawals, proportional by balance).
+        if shortfall > 0:
+          roth_pool = {
+            category: new_assets[category]
+            for category in _ROTH_ASSET_CATEGORIES
+            if new_assets[category] > 0
+          }
+          total_roth = sum(roth_pool.values())
+          if total_roth > 0:
+            original_shortfall = shortfall
+            for category, balance in roth_pool.items():
+              proportion = balance / total_roth
+              withdrawal = min(balance, original_shortfall * proportion)
+              new_assets[category] -= withdrawal
+              shortfall -= withdrawal
 
         # Any remaining shortfall comes from Cash (may go negative).
         remaining = -shortfall
