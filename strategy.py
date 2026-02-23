@@ -330,17 +330,34 @@ class Strategy:
 
         remaining = 0
       else:
-        # Retirement: withdraw proportionally from non-cash, non-reserved, non-Roth assets.
-        # Roth accounts are excluded here and only tapped as a last resort below. Each asset
-        # is grossed up for tax, so proportional allocation is based on effective (post-tax)
-        # balances. The gross withdrawal is larger; the net credited against the shortfall is
-        # the needed amount, and the tax difference is lost.
+        # Retirement shortfall withdrawal order:
+        #   1. Bonds first: lowest growth rate (4%) of any non-reserved account, and no tax
+        #      overhead, so drawing them first is unambiguously the cheapest withdrawal.
+        #   2. Proportional from the remaining general pool (401K, IRA, Stocks), grossed up for
+        #      tax based on effective (post-tax) balances.
+        #   3. Roth accounts last resort (tax-free but highest growth — most valuable to keep).
+        #   4. Cash as final fallback (may go negative).
+
+        # Pass 1: Bonds (no tax, lowest growth — cheapest to draw first).
+        if shortfall > 0:
+          bond_balance = new_assets[AssetCategory.BONDS]
+          if bond_balance > 0:
+            bond_withdrawal = min(bond_balance, shortfall)
+            new_assets[AssetCategory.BONDS] -= bond_withdrawal
+            shortfall -= bond_withdrawal
+
+        # Pass 2: Proportional from non-cash, non-reserved, non-Roth, non-Bonds accounts.
+        # Bonds are excluded here since they were already handled in pass 1.
+        # Each asset is grossed up for tax so proportional allocation is based on effective
+        # (post-tax) balances. The gross withdrawal is larger; the net credited against the
+        # shortfall is the needed amount, and the tax difference is lost.
         general_pool = {
           category: balance
           for category, balance in new_assets.items()
           if category != AssetCategory.CASH
           and category not in _RESERVED_ASSET_CATEGORIES
           and category not in _ROTH_ASSET_CATEGORIES
+          and category != AssetCategory.BONDS
           and balance > 0
         }
 
