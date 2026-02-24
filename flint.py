@@ -14,7 +14,7 @@ from datetime import datetime
 from assets import Assets, AssetCategory
 from budget import Budget
 from income import Income
-from output import print_assets_table, print_median_scenario_table, print_outcome_table, print_stats_table
+from output import print_assets_table, print_median_scenario_table, print_min_scenario_table, print_outcome_table, print_stats_table
 from rmd import RMD
 from simulation import Simulation
 from tax import Tax
@@ -225,9 +225,10 @@ def main():
   max_total = max(totals)
   median_total = statistics.median(totals)
 
-  # Find the median simulation result
-  median_idx = sorted(range(len(totals)), key=lambda i: totals[i])[len(totals) // 2]
-  median_result = results[median_idx]
+  # Find the minimum and median simulation results
+  sorted_indices = sorted(range(len(totals)), key=lambda i: totals[i])
+  min_result = results[sorted_indices[0]]
+  median_result = results[sorted_indices[len(totals) // 2]]
 
   print('=' * 60)
   print(f'Retirement: Age {retirement_age} (year {args.start_year}) to age {end_age} (year {args.end_year})')
@@ -236,6 +237,7 @@ def main():
 
   print_assets_table(f'Starting Assets in {args.start_year}', starting_assets)
   print_stats_table(min_total, max_total, median_total)
+  print_min_scenario_table(min_result, args.end_year, args.start_year)
   print_median_scenario_table(median_result, args.end_year, args.start_year)
   print_outcome_table(len(results), starting_total, totals)
 

@@ -50,6 +50,25 @@ def print_stats_table(
   print()
 
 
+def print_min_scenario_table(
+  min_result: SimulationResult,
+  end_year: int,
+  start_year: int
+) -> None:
+  """Print the minimum scenario asset breakdown table.
+
+  Args:
+    min_result: The simulation result with the lowest total assets.
+    end_year: The retirement end year (used to compute the historical end year).
+    start_year: The retirement start year (used to compute the historical end year).
+  """
+  historical_end = min_result.start_year + (end_year - start_year)
+  print_assets_table(
+    f'Minimum Scenario - Asset Breakdown ({min_result.start_year}\u2013{historical_end})',
+    min_result.assets
+  )
+
+
 def print_median_scenario_table(
   median_result: SimulationResult,
   end_year: int,
