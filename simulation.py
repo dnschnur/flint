@@ -128,7 +128,8 @@ class Simulation:
 
       current_assets = self.strategy.apply(
         year, current_assets, year_income, year_budget, retired=False, age=age,
-        eligible_529=self.budget.get_529_eligible_fraction(year)
+        eligible_529=self.budget.get_529_eligible_fraction(year),
+        employer_match_fraction=self.budget.get_employer_match_fraction(year)
       )
 
       new_assets = defaultdict(float)
@@ -260,7 +261,8 @@ class Simulation:
       current_assets = self.strategy.apply(
         year, current_assets, year_income, year_budget, retired=True, age=age,
         eligible_529=self.budget.get_529_eligible_fraction(year),
-        cg_fraction=cg_fraction
+        cg_fraction=cg_fraction,
+        employer_match_fraction=self.budget.get_employer_match_fraction(year)
       )
 
       if year < end_year:  # Don't grow in the final year

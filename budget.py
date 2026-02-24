@@ -60,6 +60,10 @@ class BudgetCategory(Enum):
   STOCKS = ('Stocks', 0.02)
   BONDS = ('Bonds', 0.02)
 
+  # Employer 401K match. Either a fixed dollar amount per year, or a percentage of the pre-tax
+  # 401K contribution (e.g. '50%'). Not deducted from income.
+  EMPLOYER_401K_MATCH = ('Employer 401K Match', 0.02)
+
   def __init__(self, display_name: str, inflation: float):
     self.display_name = display_name
     self.inflation = inflation
@@ -104,6 +108,11 @@ class Budget:
     # Unlike historical data, entries here do not advance _last_historical_year.
     self._529_eligible: dict[int, float] = {}
 
+    # Employer 401K match as a fraction of the employee's pre-tax 401K contribution, by year.
+    # Only populated when the 'Employer 401K Match' column has a plain percentage (e.g. '50%').
+    # Fixed dollar amounts use the EMPLOYER_401K_MATCH budget category instead.
+    self._employer_match_fraction: dict[int, float] = {}
+
     self._load_csv(path)
 
   @cache
@@ -147,6 +156,26 @@ class Budget:
         fraction = entry_fraction
     return fraction
 
+  @cache
+  def get_employer_match_fraction(self, year: int) -> float:
+    """Returns the employer 401K match as a fraction of the employee's pre-tax contribution.
+
+    Uses step-function semantics: the last entry at or before the given year stays in effect
+    until a newer entry overrides it. Returns 0.0 if no percentage entry exists at or before
+    that year (i.e. a fixed dollar amount or no match is configured).
+
+    Args:
+      year: The year to look up.
+
+    Returns:
+      A value >= 0.0 (e.g. 0.5 for a 50% match).
+    """
+    fraction = 0.0
+    for entry_year, entry_fraction in self._employer_match_fraction.items():
+      if entry_year <= year:
+        fraction = entry_fraction
+    return fraction
+
   def _load_csv(self, path: str) -> None:
     """Load historical budget data from the given CSV file path.
 
@@ -180,6 +209,23 @@ class Budget:
             # Does not count as historical data; does not advance _last_historical_year.
             fraction = float(value[:-1]) / 100.0 if value.endswith('%') else float(value)
             self._529_eligible[year] = fraction
+          elif col_name == 'Employer 401K Match':
+            # To prevent double-counting when switching between types, each form zeroes out the
+            # other for that year: a percentage stores 0.0 as a historical dollar amount, and a
+            # dollar amount/rule records 0.0 in _employer_match_fraction.
+            if value.endswith('%') and not value.startswith(('+', '-', '=')):
+              # Plain percentage (e.g. '50%'): a fraction of the employee's pre-tax 401K
+              # contribution. Checked before parse_rule because parse_rule also matches
+              # bare percentages as AdjustByPercentage rules.
+              fraction = float(value[:-1]) / 100.0
+              self._employer_match_fraction[year] = fraction
+              year_data[BudgetCategory.EMPLOYER_401K_MATCH] = 0.0
+            elif rule := parse_rule(year, value):
+              self._employer_match_fraction[year] = 0.0
+              self._rules[BudgetCategory.EMPLOYER_401K_MATCH][year] = rule
+            else:
+              self._employer_match_fraction[year] = 0.0
+              year_data[BudgetCategory.EMPLOYER_401K_MATCH] = float(value)
           else:
             category = BudgetCategory.from_name(col_name)
             if rule := parse_rule(year, value):

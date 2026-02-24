@@ -24,6 +24,7 @@ _BUDGET_TO_ASSET_CATEGORIES = {
   BudgetCategory.HSA: AssetCategory.HSA,
   BudgetCategory.STOCKS: AssetCategory.STOCKS,
   BudgetCategory.BONDS: AssetCategory.BONDS,
+  BudgetCategory.EMPLOYER_401K_MATCH: AssetCategory.PLAN_401K,
 }
 
 # Budget categories that represent pre-tax contributions. Income is allocated to these
@@ -45,6 +46,7 @@ _RETIREMENT_CONTRIBUTION_CATEGORIES = {
   BudgetCategory.ROTH_IRA,
   BudgetCategory.PLAN_529,
   BudgetCategory.HSA,
+  BudgetCategory.EMPLOYER_401K_MATCH,
 }
 
 # Asset categories subject to RMDs (traditional/pre-tax retirement accounts)
@@ -214,7 +216,8 @@ class Strategy:
     retired: bool = False,
     age: int = 0,
     eligible_529: float = 0.0,
-    cg_fraction: float = 0.0
+    cg_fraction: float = 0.0,
+    employer_match_fraction: float = 0.0
   ) -> defaultdict[AssetCategory, float]:
     """Returns updated asset values after applying income, tax, and budget for the year.
 
@@ -253,6 +256,9 @@ class Strategy:
       eligible_529: Fraction of the school budget payable from the 529 plan.
       cg_fraction: Fraction of stock/asset withdrawals treated as capital gains. Should be
           0.0 pre-retirement, ramping from 0.0 to 1.0 linearly over retirement.
+      employer_match_fraction: Employer 401K match as a fraction of the employee's pre-tax
+          401K contribution (e.g. 0.5 for a 50% match). Applied pre-retirement only. Added
+          directly to the pre-tax 401K balance without affecting taxable income.
 
     Returns:
       Updated asset values after applying income and budget.
@@ -282,6 +288,11 @@ class Strategy:
           new_assets[_BUDGET_TO_ASSET_CATEGORIES[category]] += amount
           remaining -= amount
 
+      # Apply employer 401K match. This does not affect taxable income.
+      if employer_match_fraction:
+        pre_tax_401k = budget.get(BudgetCategory.PRE_TAX_401K, 0.0)
+        new_assets[AssetCategory.PLAN_401K] += pre_tax_401k * employer_match_fraction
+
     # Apply ordinary income tax on the post-contribution income.
     # Track taxable_income for use in withdrawal gross-up calculations later.
     taxable_income = remaining
@@ -289,6 +300,9 @@ class Strategy:
 
     # Process remaining budget items (expenses and after-tax contributions).
     for category, amount in budget.items():
+      if category == BudgetCategory.EMPLOYER_401K_MATCH:
+        new_assets[AssetCategory.PLAN_401K] += amount
+        continue
       if category in _PRE_TAX_CONTRIBUTION_CATEGORIES:
         continue  # Already handled previously
       if retired and category in _RETIREMENT_CONTRIBUTION_CATEGORIES:
