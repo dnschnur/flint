@@ -54,11 +54,17 @@ class Assets:
   each category.
   """
 
-  def __init__(self, path: str):
+  def __init__(self, path: str, growth: dict[str, float] | None = None):
     """Initialize and load historical asset data from a CSV file.
 
     Args:
       path: Path to the CSV file containing historical asset data.
+      growth: Optional per-category growth rate overrides, keyed by enum member name
+          (e.g. 'roth_401k') with values as fractions (e.g. 0.05 for 5%). Overrides the default
+          growth rate on the AssetCategory enum for projection and pre-retirement growth.
+
+    Raises:
+      ValueError: If any key in growth does not match a known AssetCategory name.
     """
     # Historical data: {year: {category: amount}}
     self._historical: dict[int, dict[AssetCategory, float]] = {}
@@ -68,6 +74,17 @@ class Assets:
 
     # Rules mapping from (category, year) to rule
     self._rules: defaultdict[AssetCategory, dict[int, Rule]] = defaultdict(dict)
+
+    # Per-category growth rate overrides (fraction, e.g. 0.05 for 5%).
+    self._growth: dict[AssetCategory, float] = {}
+
+    if growth:
+      for key, value in growth.items():
+        try:
+          category = AssetCategory[key.upper()]
+        except KeyError:
+          raise ValueError(f'Unknown asset category in growth overrides: "{key}"')
+        self._growth[category] = value
 
     self._load_csv(path)
 
@@ -151,7 +168,7 @@ class Assets:
     Returns:
       The updated balance after applying any rule and growth.
     """
-    rate = growth_rate if growth_rate is not None else category.growth
+    rate = growth_rate if growth_rate is not None else self._growth.get(category, category.growth)
     rule = self._rules.get(category, {}).get(year)
     if rule:
       amount = rule.apply(amount)

@@ -171,8 +171,13 @@ def main():
   except FileNotFoundError as e:
     parser.error(str(e))
 
-  assets = Assets(paths.assets)
-  budget = Budget(paths.budget)
+  def pct_to_fraction(overrides: dict) -> dict[str, float]:
+    return {k: float(v) / 100.0 for k, v in overrides.items()}
+
+  assets = Assets(paths.assets,
+                  growth=pct_to_fraction(scenario.get('assets', {}).get('growth', {})))
+  budget = Budget(paths.budget,
+                  inflation=pct_to_fraction(scenario.get('budget', {}).get('growth', {})))
   income = Income(paths.income)
   rmd = RMD('data/rmd.csv')
 

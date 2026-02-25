@@ -89,11 +89,17 @@ class Budget:
   each category.
   """
 
-  def __init__(self, path: str):
+  def __init__(self, path: str, inflation: dict[str, float] | None = None):
     """Initialize and load historical budget data from a CSV file.
 
     Args:
       path: Path to the CSV file containing historical budget data.
+      inflation: Optional per-category inflation rate overrides, keyed by enum member name
+          (e.g. 'housing') with values as fractions (e.g. 0.05 for 5%). Overrides the default
+          inflation rate on the BudgetCategory enum when projecting future years.
+
+    Raises:
+      ValueError: If any key in inflation does not match a known BudgetCategory name.
     """
     # Historical data: {year: {category: amount}}
     self._historical: dict[int, dict[BudgetCategory, float]] = {}
@@ -112,6 +118,17 @@ class Budget:
     # Only populated when the 'Employer 401K Match' column has a plain percentage (e.g. '50%').
     # Fixed dollar amounts use the EMPLOYER_401K_MATCH budget category instead.
     self._employer_match_fraction: dict[int, float] = {}
+
+    # Per-category inflation rate overrides (fraction, e.g. 0.05 for 5%).
+    self._inflation: dict[BudgetCategory, float] = {}
+
+    if inflation:
+      for key, value in inflation.items():
+        try:
+          category = BudgetCategory[key.upper()]
+        except KeyError:
+          raise ValueError(f'Unknown budget category in inflation overrides: "{key}"')
+        self._inflation[category] = value
 
     self._load_csv(path)
 
@@ -256,6 +273,7 @@ class Budget:
 
     amount = self._historical.get(self._last_historical_year, {}).get(category, 0.0)
     category_rules = self._rules.get(category, {})
+    inflation = self._inflation.get(category, category.inflation)
 
     # Project year by year, applying rules and/or default inflation.
     # If a rule exists, apply it; then apply inflation unless the rule suppresses it.
@@ -265,8 +283,8 @@ class Budget:
       if rule:
         amount = rule.apply(amount)
         if rule.apply_growth:
-          amount *= 1 + category.inflation
+          amount *= 1 + inflation
       else:
-        amount *= 1 + category.inflation
+        amount *= 1 + inflation
 
     return amount
