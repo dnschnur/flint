@@ -357,30 +357,19 @@ class Strategy:
         remaining = 0
       else:
         # Retirement shortfall withdrawal order:
-        #   1. Bonds first: lowest growth rate (4%) of any non-reserved account, and no tax
-        #      overhead, so drawing them first is unambiguously the cheapest withdrawal.
-        #   2. Proportional from the remaining general pool (401K, IRA, Stocks), grossed up for
-        #      tax based on effective (post-tax) balances. Ordinary income (401K/IRA) withdrawals
-        #      are capped at the current bracket boundary; any uncovered net stays in the shortfall
-        #      for the Roth pass to absorb tax-free rather than paying the higher bracket rate.
-        #   3. Roth accounts: covers bracket-diverted shortfall from pass 2 (avoiding the higher
-        #      bracket rate) plus any remaining pool exhaustion. Drawn last to preserve tax-free
-        #      growth as long as possible.
+        #   1. Proportional from taxable pool (401K, IRA, Stocks), grossed up for tax.
+        #      Ordinary income (401K/IRA) withdrawals are capped at the federal bracket
+        #      boundary; uncovered net stays in shortfall for the tax-free pass.
+        #   2. Proportional from tax-free pool (Bonds, Cash, Roth): none of these add taxable
+        #      income on withdrawal, so drawing them covers bracket-diverted shortfall without
+        #      pushing income into the next bracket.
+        #   3. Fallback: remaining non-reserved assets without bracket cap, to avoid negative
+        #      Cash while other assets still remain.
         #   4. Cash as final fallback (may go negative).
 
-        # Pass 1: Bonds (no tax, lowest growth — cheapest to draw first).
-        if shortfall > 0:
-          bond_balance = new_assets[AssetCategory.BONDS]
-          if bond_balance > 0:
-            bond_withdrawal = min(bond_balance, shortfall)
-            new_assets[AssetCategory.BONDS] -= bond_withdrawal
-            shortfall -= bond_withdrawal
-
-        # Pass 2: Proportional from non-cash, non-reserved, non-Roth, non-Bonds accounts.
-        # Bonds are excluded here since they were already handled in pass 1.
-        # Each asset is grossed up for tax so proportional allocation is based on effective
-        # (post-tax) balances. The gross withdrawal is larger; the net credited against the
-        # shortfall is the needed amount, and the tax difference is lost.
+        # Pass 1: Proportional from taxable pool (401K, IRA, Stocks). Bonds, Cash, and Roth
+        # are excluded as tax-free sources handled in pass 2. Each asset is grossed up for
+        # tax so proportional allocation is based on effective (post-tax) balances.
         general_pool = {
           category: balance
           for category, balance in new_assets.items()
@@ -425,7 +414,7 @@ class Strategy:
               # Cap at the bracket boundary (to avoid paying the higher rate) and at the available
               # balance (effective_pool uses taxable_income's rate, but running_income may be higher
               # after earlier withdrawals, so gross_for_net can exceed balance). Leave any uncovered
-              # net in shortfall for the Roth/fallback passes.
+              # net in shortfall for the tax-free and fallback passes.
               bracket_remaining = (
                 self.tax.next_ordinary_bracket_threshold(running_income, year) - running_income
               )
@@ -441,28 +430,31 @@ class Strategy:
               shortfall -= net_needed
             new_assets[category] = balance - gross_withdrawal
 
-        # Draw from Roth to cover any remaining shortfall: bracket-diverted amounts from
-        # pass 2 (where ordinary income was capped at the bracket boundary) plus any
-        # shortfall from pool exhaustion. Proportional by Roth balance.
+        # Pass 2: Proportional from tax-free pool (Bonds, Cash, Roth). None of these add
+        # taxable income on withdrawal, so drawing them proportionally covers bracket-diverted
+        # shortfall from pass 1 without pushing income into the next bracket.
         if shortfall > 0:
-          roth_pool = {
-            category: new_assets[category]
-            for category in _ROTH_ASSET_CATEGORIES
-            if new_assets[category] > 0
-            and age >= _EARLY_WITHDRAWAL_MIN_AGE.get(category, 0)
-          }
-          total_roth = sum(roth_pool.values())
-          if total_roth > 0:
+          tax_free_pool = {}
+          for category, balance in new_assets.items():
+            if category == AssetCategory.BONDS and balance > 0:
+              tax_free_pool[category] = balance
+            elif category == AssetCategory.CASH and balance > 0:
+              tax_free_pool[category] = balance
+            elif (category in _ROTH_ASSET_CATEGORIES and balance > 0
+                  and age >= _EARLY_WITHDRAWAL_MIN_AGE.get(category, 0)):
+              tax_free_pool[category] = balance
+          total_tax_free = sum(tax_free_pool.values())
+          if total_tax_free > 0:
             original_shortfall = shortfall
-            for category, balance in roth_pool.items():
-              proportion = balance / total_roth
+            for category, balance in tax_free_pool.items():
+              proportion = balance / total_tax_free
               withdrawal = min(balance, original_shortfall * proportion)
               new_assets[category] -= withdrawal
               shortfall -= withdrawal
 
-        # Fallback: if shortfall remains after Roth is exhausted, draw proportionally from any
-        # remaining non-reserved, non-Roth, non-Cash assets without bracket cap. This prevents
-        # Cash from going negative while other assets still have value to liquidate.
+        # Pass 3: Fallback — draw proportionally from any remaining non-reserved, non-Roth,
+        # non-Cash assets without bracket cap. Prevents Cash from going negative while other
+        # assets still remain.
         if shortfall:
           fallback_pool = {
             category: balance
