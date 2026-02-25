@@ -375,26 +375,39 @@ class Strategy:
           and balance > 0
         }
 
-        # Compute each asset's tax multiplier and effective (post-tax) balance.
-        multipliers = {
-          category: _withdrawal_multiplier(category, self.tax, taxable_income, year, cg_fraction)
-          for category in general_pool
-        }
-        effective_pool = {
-          category: balance / multipliers[category]
-          for category, balance in general_pool.items()
-        }
+        # Compute each asset's effective (post-tax) balance for proportional allocation.
+        # Ordinary income accounts (401K/IRA) use exact incremental tax against the full
+        # balance, so bracket-crossing is correctly reflected in the proportions.
+        # CG accounts use the multiplier approximation.
+        base_tax = self.tax.calculate(taxable_income, year)
+        effective_pool = {}
+        cg_multipliers = {}
+        for category, balance in general_pool.items():
+          if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
+            incremental_tax = self.tax.calculate(taxable_income + balance, year) - base_tax
+            effective_pool[category] = balance - incremental_tax
+          else:
+            multiplier = _withdrawal_multiplier(
+                category, self.tax, taxable_income, year, cg_fraction)
+            effective_pool[category] = balance / multiplier
+            cg_multipliers[category] = multiplier
         total_effective = sum(effective_pool.values())
 
         if total_effective:
           # Allocate proportionally by effective balance so each asset contributes equally
-          # in post-tax terms. Gross up actual withdrawal to cover the tax cost.
+          # in post-tax terms. For ordinary income accounts, gross up using a running income
+          # total so that each successive withdrawal is taxed at the correct bracket.
+          running_income = taxable_income
           original_shortfall = shortfall
           for category, balance in general_pool.items():
             effective_balance = effective_pool[category]
             proportion = effective_balance / total_effective
             net_needed = min(effective_balance, original_shortfall * proportion)
-            gross_withdrawal = net_needed * multipliers[category]
+            if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
+              gross_withdrawal = self.tax.gross_for_net_ordinary(net_needed, running_income, year)
+              running_income += gross_withdrawal
+            else:
+              gross_withdrawal = net_needed * cg_multipliers[category]
             new_assets[category] = balance - gross_withdrawal
             shortfall -= net_needed
 

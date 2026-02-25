@@ -81,6 +81,34 @@ class Tax:
       )
     return total
 
+  def gross_for_net_ordinary(self, net: float, base_income: float, year: int) -> float:
+    """Compute the gross 401K/IRA withdrawal that yields exactly 'net' after incremental tax.
+
+    Finds the gross amount such that:
+      gross - (calculate(base_income + gross, year) - calculate(base_income, year)) = net
+
+    Handles bracket-crossing withdrawals correctly and includes state tax automatically.
+
+    Args:
+      net: Target net amount after incremental ordinary income tax.
+      base_income: Current taxable income before this withdrawal.
+      year: The tax year.
+
+    Returns:
+      Gross withdrawal amount >= net.
+    """
+    if net <= 0:
+      return 0.0
+    base_tax = self.calculate(base_income, year)
+    lo, hi = net, net * 3  # gross >= net; 3x covers up to ~67% marginal rate
+    for _ in range(32):
+      mid = (lo + hi) / 2
+      if mid - (self.calculate(base_income + mid, year) - base_tax) < net:
+        lo = mid
+      else:
+        hi = mid
+    return (lo + hi) / 2
+
   def marginal_rate(self, amount: float, year: int, capital_gains: bool = False) -> float:
     """Returns the marginal tax rate for the given income amount and year.
 
