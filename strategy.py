@@ -397,11 +397,11 @@ class Strategy:
             cg_multipliers[category] = multiplier
         total_effective = sum(effective_pool.values())
 
+        running_income = taxable_income
         if total_effective:
           # Allocate proportionally by effective balance so each asset contributes equally
           # in post-tax terms. For ordinary income accounts, gross up using a running income
           # total so that each successive withdrawal is taxed at the correct bracket.
-          running_income = taxable_income
           original_shortfall = shortfall
           for category, balance in general_pool.items():
             effective_balance = effective_pool[category]
@@ -409,20 +409,19 @@ class Strategy:
             net_needed = min(effective_balance, original_shortfall * proportion)
             if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
               gross_withdrawal = self.tax.gross_for_net_ordinary(net_needed, running_income, year)
-              # Cap at the current bracket boundary. Paying a higher rate is worse than covering it
-              # from Roth tax-free, so leave any extra in shortfall for the Roth pass.
+              # Cap at the bracket boundary (to avoid paying the higher rate) and at the available
+              # balance (effective_pool uses taxable_income's rate, but running_income may be higher
+              # after earlier withdrawals, so gross_for_net can exceed balance). Leave any uncovered
+              # net in shortfall for the Roth/fallback passes.
               bracket_remaining = (
                 self.tax.next_ordinary_bracket_threshold(running_income, year) - running_income
               )
-              if gross_withdrawal > bracket_remaining:
-                gross_withdrawal = bracket_remaining
-                net_covered = bracket_remaining - (
-                  self.tax.calculate(running_income + bracket_remaining, year)
-                  - self.tax.calculate(running_income, year)
-                )
-                shortfall -= net_covered
-              else:
-                shortfall -= net_needed
+              gross_withdrawal = min(gross_withdrawal, bracket_remaining, balance)
+              net_covered = gross_withdrawal - (
+                self.tax.calculate(running_income + gross_withdrawal, year)
+                - self.tax.calculate(running_income, year)
+              )
+              shortfall -= net_covered
               running_income += gross_withdrawal
             else:
               gross_withdrawal = net_needed * cg_multipliers[category]
@@ -446,6 +445,40 @@ class Strategy:
               withdrawal = min(balance, original_shortfall * proportion)
               new_assets[category] -= withdrawal
               shortfall -= withdrawal
+
+        # Fallback: if shortfall remains after Roth is exhausted, draw proportionally from any
+        # remaining non-reserved, non-Roth, non-Cash assets without bracket cap. This prevents
+        # Cash from going negative while other assets still have value to liquidate.
+        if shortfall:
+          fallback_pool = {
+            category: balance
+            for category, balance in new_assets.items()
+            if category != AssetCategory.CASH
+            and category not in _RESERVED_ASSET_CATEGORIES
+            and category not in _ROTH_ASSET_CATEGORIES
+            and balance
+          }
+          total_fallback = sum(fallback_pool.values())
+          if total_fallback:
+            original_shortfall = shortfall
+            for category, balance in fallback_pool.items():
+              proportion = balance / total_fallback
+              net_target = original_shortfall * proportion
+              if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
+                gross_needed = self.tax.gross_for_net_ordinary(net_target, running_income, year)
+                gross_withdrawal = min(balance, gross_needed)
+                net_covered = gross_withdrawal - (
+                  self.tax.calculate(running_income + gross_withdrawal, year)
+                  - self.tax.calculate(running_income, year)
+                )
+                running_income += gross_withdrawal
+              else:
+                multiplier = _withdrawal_multiplier(
+                  category, self.tax, running_income, year, cg_fraction)
+                gross_withdrawal = min(balance, net_target * multiplier)
+                net_covered = gross_withdrawal / multiplier
+              new_assets[category] = balance - gross_withdrawal
+              shortfall -= net_covered
 
         # Any remaining shortfall comes from Cash (may go negative).
         remaining = -shortfall
