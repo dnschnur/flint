@@ -81,6 +81,27 @@ class Tax:
       )
     return total
 
+  def next_ordinary_bracket_threshold(self, income: float, year: int) -> float:
+    """Returns the next federal ordinary income threshold above the given income level.
+
+    Uses federal brackets only, so that small state bracket steps (e.g. CA's 1%→2% at ~$22K)
+    don't trigger overly aggressive Roth diversion. Only meaningful federal jumps (e.g. 12%→22%,
+    22%→24%) influence the cap.
+
+    Alternative: include state brackets but add a minimum combined-rate-increase threshold
+    (e.g. only cap at boundaries where the marginal rate jumps by >= 5%) so that small state
+    steps are ignored while large combined jumps still trigger Roth diversion.
+
+    Args:
+      income: Current income level.
+      year: The tax year.
+
+    Returns:
+      The income level at which the next higher federal ordinary income bracket begins.
+    """
+    brackets = self._project_brackets(year, capital_gains=False)
+    return next((threshold for threshold, _ in brackets if threshold > income), float('inf'))
+
   def gross_for_net_ordinary(self, net: float, base_income: float, year: int) -> float:
     """Compute the gross 401K/IRA withdrawal that yields exactly 'net' after incremental tax.
 

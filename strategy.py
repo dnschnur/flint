@@ -348,8 +348,12 @@ class Strategy:
         #   1. Bonds first: lowest growth rate (4%) of any non-reserved account, and no tax
         #      overhead, so drawing them first is unambiguously the cheapest withdrawal.
         #   2. Proportional from the remaining general pool (401K, IRA, Stocks), grossed up for
-        #      tax based on effective (post-tax) balances.
-        #   3. Roth accounts last resort (tax-free but highest growth — most valuable to keep).
+        #      tax based on effective (post-tax) balances. Ordinary income (401K/IRA) withdrawals
+        #      are capped at the current bracket boundary; any uncovered net stays in the shortfall
+        #      for the Roth pass to absorb tax-free rather than paying the higher bracket rate.
+        #   3. Roth accounts: covers bracket-diverted shortfall from pass 2 (avoiding the higher
+        #      bracket rate) plus any remaining pool exhaustion. Drawn last to preserve tax-free
+        #      growth as long as possible.
         #   4. Cash as final fallback (may go negative).
 
         # Pass 1: Bonds (no tax, lowest growth — cheapest to draw first).
@@ -405,14 +409,29 @@ class Strategy:
             net_needed = min(effective_balance, original_shortfall * proportion)
             if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
               gross_withdrawal = self.tax.gross_for_net_ordinary(net_needed, running_income, year)
+              # Cap at the current bracket boundary. Paying a higher rate is worse than covering it
+              # from Roth tax-free, so leave any extra in shortfall for the Roth pass.
+              bracket_remaining = (
+                self.tax.next_ordinary_bracket_threshold(running_income, year) - running_income
+              )
+              if gross_withdrawal > bracket_remaining:
+                gross_withdrawal = bracket_remaining
+                net_covered = bracket_remaining - (
+                  self.tax.calculate(running_income + bracket_remaining, year)
+                  - self.tax.calculate(running_income, year)
+                )
+                shortfall -= net_covered
+              else:
+                shortfall -= net_needed
               running_income += gross_withdrawal
             else:
               gross_withdrawal = net_needed * cg_multipliers[category]
+              shortfall -= net_needed
             new_assets[category] = balance - gross_withdrawal
-            shortfall -= net_needed
 
-        # If the general pool couldn't cover the full shortfall, draw from Roth accounts as
-        # a last resort (tax-free withdrawals, proportional by balance).
+        # Draw from Roth to cover any remaining shortfall: bracket-diverted amounts from
+        # pass 2 (where ordinary income was capped at the bracket boundary) plus any
+        # shortfall from pool exhaustion. Proportional by Roth balance.
         if shortfall > 0:
           roth_pool = {
             category: new_assets[category]
