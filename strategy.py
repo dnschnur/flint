@@ -92,6 +92,18 @@ _CAPITAL_GAINS_ASSET_CATEGORIES = {
   AssetCategory.STOCKS,
 }
 
+# Minimum age for penalty-free withdrawals, keyed by asset category. Withdrawals before
+# this age incur a 10% IRS penalty; the strategy avoids these accounts entirely rather
+# than paying the penalty. Based on the standard 59½ rule, using age 59 as the annual
+# proxy (you will be 59½ sometime during the year you are 59).
+# Note: RMDs are mandatory distributions and are never blocked by this check.
+_EARLY_WITHDRAWAL_MIN_AGE = {
+  AssetCategory.PLAN_401K: 59,
+  AssetCategory.IRA: 59,
+  AssetCategory.ROTH_401K: 59,
+  AssetCategory.ROTH_IRA: 59,
+}
+
 
 def _withdrawal_multiplier(
   category: AssetCategory,
@@ -377,6 +389,7 @@ class Strategy:
           and category not in _ROTH_ASSET_CATEGORIES
           and category != AssetCategory.BONDS
           and balance > 0
+          and age >= _EARLY_WITHDRAWAL_MIN_AGE.get(category, 0)
         }
 
         # Compute each asset's effective (post-tax) balance for proportional allocation.
@@ -436,6 +449,7 @@ class Strategy:
             category: new_assets[category]
             for category in _ROTH_ASSET_CATEGORIES
             if new_assets[category] > 0
+            and age >= _EARLY_WITHDRAWAL_MIN_AGE.get(category, 0)
           }
           total_roth = sum(roth_pool.values())
           if total_roth > 0:
@@ -457,6 +471,7 @@ class Strategy:
             and category not in _RESERVED_ASSET_CATEGORIES
             and category not in _ROTH_ASSET_CATEGORIES
             and balance
+            and age >= _EARLY_WITHDRAWAL_MIN_AGE.get(category, 0)
           }
           total_fallback = sum(fallback_pool.values())
           if total_fallback:
