@@ -52,8 +52,7 @@ class BudgetCategory(Enum):
   # Contributions to asset classes.
   PRE_TAX_401K = ('Pre-Tax 401K', 0.02, AssetCategory.PLAN_401K)
   AFTER_TAX_401K = ('After-Tax 401K', 0.02, AssetCategory.PLAN_401K)
-  PRE_TAX_ROTH_401K = ('Pre-Tax 401K (Roth)', 0.02, AssetCategory.ROTH_401K)
-  AFTER_TAX_ROTH_401K = ('After-Tax 401K (Roth)', 0.02, AssetCategory.ROTH_401K)
+  ROTH_401K = ('Roth 401K', 0.02, AssetCategory.ROTH_401K)
   IRA = ('IRA', 0.02, AssetCategory.IRA)
   ROTH_IRA = ('Roth IRA', 0.02, AssetCategory.ROTH_IRA)
   PLAN_529 = ('529 Plan', 0.02, AssetCategory.PLAN_529)
@@ -88,7 +87,6 @@ class BudgetCategory(Enum):
     """True for budget items that are pre-tax contributions reducing taxable income."""
     return self in {
       BudgetCategory.PRE_TAX_401K,
-      BudgetCategory.PRE_TAX_ROTH_401K,
       BudgetCategory.IRA,
     }
 
@@ -98,8 +96,7 @@ class BudgetCategory(Enum):
     return self in {
       BudgetCategory.PRE_TAX_401K,
       BudgetCategory.AFTER_TAX_401K,
-      BudgetCategory.PRE_TAX_ROTH_401K,
-      BudgetCategory.AFTER_TAX_ROTH_401K,
+      BudgetCategory.ROTH_401K,
       BudgetCategory.IRA,
       BudgetCategory.ROTH_IRA,
       BudgetCategory.PLAN_529,
