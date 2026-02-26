@@ -76,6 +76,14 @@ class Simulation:
     self.simulation_min_year = simulation_min_year or available_years[0]
     self.simulation_max_year = simulation_max_year or available_years[-1]
 
+  def _get_year_budget(self, year: int) -> dict[BudgetCategory, float]:
+    """Returns budget amounts for the given year, omitting zero or absent categories."""
+    return {
+      category: amount
+      for category in BudgetCategory
+      if (amount := self.budget.get_category(category, year))
+    }
+
   def project_pre_retirement(self, retirement_year: int):
     """Project assets year by year from the data year up to (not including) retirement_year.
 
@@ -110,10 +118,7 @@ class Simulation:
       age = self.current_age + (year - self.data_year)
 
       year_income = self.income.get(year, retired=False)
-      year_budget = {}
-      for category in BudgetCategory:
-        if amount := self.budget.get_category(category, year):
-          year_budget[category] = amount
+      year_budget = self._get_year_budget(year)
 
       current_assets = self.strategy.apply(
         year, current_assets, year_income, year_budget, retired=False, age=age,
@@ -242,10 +247,7 @@ class Simulation:
       cg_fraction = (year - start_year) / retirement_length if retirement_length else 0.0
 
       year_income = self.income.get(year, retired=True)
-      year_budget = {}
-      for category in BudgetCategory:
-        if amount := self.budget.get_category(category, year):
-          year_budget[category] = amount
+      year_budget = self._get_year_budget(year)
 
       current_assets = self.strategy.apply(
         year, current_assets, year_income, year_budget, retired=True, age=age,

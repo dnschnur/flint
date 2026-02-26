@@ -130,6 +130,19 @@ class Tax:
         hi = mid
     return (lo + hi) / 2
 
+  def incremental_ordinary_tax(self, base_income: float, additional: float, year: int) -> float:
+    """Returns the incremental ordinary income tax on `additional` layered on top of `base_income`.
+
+    Args:
+      base_income: Current taxable income before the additional amount.
+      additional: The additional amount of ordinary income.
+      year: The tax year.
+
+    Returns:
+      The marginal tax on `additional`, including both federal and state taxes.
+    """
+    return self.calculate(base_income + additional, year) - self.calculate(base_income, year)
+
   def marginal_rate(self, amount: float, year: int, capital_gains: bool = False) -> float:
     """Returns the marginal tax rate for the given income amount and year.
 

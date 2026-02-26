@@ -20,6 +20,54 @@ _LIQUID_ASSETS = (
 )
 
 
+def _is_withdrawal_eligible(category: AssetCategory, balance: float, age: int) -> bool:
+  """Returns whether the asset is eligible for general-pool withdrawal at the given age.
+
+  Excludes Cash (handled as the final fallback), reserved accounts (HSA, 529, Real Estate),
+  Roth accounts (handled in the tax-free pool), and age-restricted accounts when the
+  penalty-free withdrawal age hasn't been reached.
+  """
+  return (
+    category != AssetCategory.CASH
+    and not category.is_reserved
+    and not category.is_roth
+    and balance > 0
+    and age >= category.withdrawal_min_age
+  )
+
+
+def _gross_up_ordinary(
+  net: float,
+  balance: float,
+  running_income: float,
+  year: int,
+  tax: Tax,
+  bracket_cap: bool = False
+) -> tuple[float, float]:
+  """Compute a gross ordinary-income withdrawal that yields `net` after incremental tax.
+
+  Args:
+    net: Target net amount after incremental ordinary income tax.
+    balance: Available balance in the account (caps the gross withdrawal).
+    running_income: Current taxable income before this withdrawal.
+    year: The tax year.
+    tax: Tax calculator.
+    bracket_cap: If True, additionally cap at the current federal bracket boundary to avoid
+        paying the higher bracket rate. Uncovered net flows to subsequent passes.
+
+  Returns:
+    (gross_withdrawal, net_covered): Gross amount withdrawn and net amount actually covered.
+  """
+  gross = tax.gross_for_net_ordinary(net, running_income, year)
+  if bracket_cap:
+    bracket_remaining = tax.next_ordinary_bracket_threshold(running_income, year) - running_income
+    gross = min(gross, bracket_remaining, balance)
+  else:
+    gross = min(gross, balance)
+  net_covered = gross - tax.incremental_ordinary_tax(running_income, gross, year)
+  return gross, net_covered
+
+
 def _withdrawal_multiplier(
   category: AssetCategory,
   tax: Tax,
@@ -94,7 +142,7 @@ def _apply_hsa_withdrawal(
   budget and available HSA balance. HSA withdrawals for qualified medical expenses are
   tax-free, so no gross-up is applied.
 
-  Modifies new_assets in place and returns the remaining shortfall.
+  Modifies new_assets in place and returns the amount withdrawn.
 
   Args:
     new_assets: Current asset balances (modified in place).
@@ -102,16 +150,15 @@ def _apply_hsa_withdrawal(
     shortfall: The current funding shortfall to reduce.
 
   Returns:
-    The remaining shortfall after the HSA withdrawal.
+    The amount withdrawn from the HSA.
   """
   health_expenses = budget.get(BudgetCategory.HEALTH, 0.0)
   if not health_expenses:
-    return shortfall
+    return 0.0
   withdrawal = min(health_expenses, new_assets[AssetCategory.HSA], shortfall)
   if withdrawal:
     new_assets[AssetCategory.HSA] -= withdrawal
-    shortfall -= withdrawal
-  return shortfall
+  return withdrawal
 
 
 class Strategy:
@@ -249,7 +296,7 @@ class Strategy:
       shortfall = -remaining
 
       # HSA covers health expenses first (tax-free, no gross-up).
-      shortfall = _apply_hsa_withdrawal(new_assets, budget, shortfall)
+      shortfall -= _apply_hsa_withdrawal(new_assets, budget, shortfall)
 
       if not retired:
         # Pre-retirement: withdraw from liquid assets in priority order.
@@ -288,24 +335,19 @@ class Strategy:
         general_pool = {
           category: balance
           for category, balance in new_assets.items()
-          if category != AssetCategory.CASH
-          and not category.is_reserved
-          and not category.is_roth
+          if _is_withdrawal_eligible(category, balance, age)
           and category != AssetCategory.BONDS
-          and balance > 0
-          and age >= category.withdrawal_min_age
         }
 
         # Compute each asset's effective (post-tax) balance for proportional allocation.
         # Ordinary income accounts (401K/IRA) use exact incremental tax against the full
         # balance, so bracket-crossing is correctly reflected in the proportions.
         # CG accounts use the multiplier approximation.
-        base_tax = self.tax.calculate(taxable_income, year)
         effective_pool = {}
         cg_multipliers = {}
         for category, balance in general_pool.items():
           if category.ordinary_income:
-            incremental_tax = self.tax.calculate(taxable_income + balance, year) - base_tax
+            incremental_tax = self.tax.incremental_ordinary_tax(taxable_income, balance, year)
             effective_pool[category] = balance - incremental_tax
           else:
             multiplier = _withdrawal_multiplier(
@@ -325,19 +367,10 @@ class Strategy:
             proportion = effective_balance / total_effective
             net_needed = min(effective_balance, original_shortfall * proportion)
             if category.ordinary_income:
-              gross_withdrawal = self.tax.gross_for_net_ordinary(net_needed, running_income, year)
               # Cap at the bracket boundary (to avoid paying the higher rate) and at the available
-              # balance (effective_pool uses taxable_income's rate, but running_income may be higher
-              # after earlier withdrawals, so gross_for_net can exceed balance). Leave any uncovered
-              # net in shortfall for the tax-free and fallback passes.
-              bracket_remaining = (
-                self.tax.next_ordinary_bracket_threshold(running_income, year) - running_income
-              )
-              gross_withdrawal = min(gross_withdrawal, bracket_remaining, balance)
-              net_covered = gross_withdrawal - (
-                self.tax.calculate(running_income + gross_withdrawal, year)
-                - self.tax.calculate(running_income, year)
-              )
+              # balance. Leave any uncovered net in shortfall for the tax-free and fallback passes.
+              gross_withdrawal, net_covered = _gross_up_ordinary(
+                net_needed, balance, running_income, year, self.tax, bracket_cap=True)
               shortfall -= net_covered
               running_income += gross_withdrawal
             else:
@@ -374,11 +407,7 @@ class Strategy:
           fallback_pool = {
             category: balance
             for category, balance in new_assets.items()
-            if category != AssetCategory.CASH
-            and not category.is_reserved
-            and not category.is_roth
-            and balance
-            and age >= category.withdrawal_min_age
+            if _is_withdrawal_eligible(category, balance, age)
           }
           total_fallback = sum(fallback_pool.values())
           if total_fallback:
@@ -387,12 +416,8 @@ class Strategy:
               proportion = balance / total_fallback
               net_target = original_shortfall * proportion
               if category.ordinary_income:
-                gross_needed = self.tax.gross_for_net_ordinary(net_target, running_income, year)
-                gross_withdrawal = min(balance, gross_needed)
-                net_covered = gross_withdrawal - (
-                  self.tax.calculate(running_income + gross_withdrawal, year)
-                  - self.tax.calculate(running_income, year)
-                )
+                gross_withdrawal, net_covered = _gross_up_ordinary(
+                  net_target, balance, running_income, year, self.tax)
                 running_income += gross_withdrawal
               else:
                 multiplier = _withdrawal_multiplier(
