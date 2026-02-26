@@ -93,9 +93,6 @@ def _withdrawal_multiplier(
   if category.capital_gains and cg_fraction:
     rate = tax.marginal_rate(taxable_income, year, capital_gains=True)
     return 1.0 + cg_fraction * rate
-  if category.ordinary_income:
-    rate = tax.marginal_rate(taxable_income, year, capital_gains=False)
-    return 1.0 + rate
   return 1.0
 
 
@@ -329,6 +326,10 @@ class Strategy:
         #      Cash while other assets still remain.
         #   4. Cash as final fallback (may go negative).
 
+        # Tracks cumulative taxable income across all passes so that each successive
+        # ordinary income withdrawal is taxed at the correct marginal bracket.
+        running_income = taxable_income
+
         # Pass 1: Proportional from taxable pool (401K, IRA, Stocks). Bonds, Cash, and Roth
         # are excluded as tax-free sources handled in pass 2. Each asset is grossed up for
         # tax so proportional allocation is based on effective (post-tax) balances.
@@ -336,7 +337,7 @@ class Strategy:
           category: balance
           for category, balance in new_assets.items()
           if _is_withdrawal_eligible(category, balance, age)
-          and category != AssetCategory.BONDS
+          and not category.cash_equivalent
         }
 
         # Compute each asset's effective (post-tax) balance for proportional allocation.
@@ -356,7 +357,6 @@ class Strategy:
             cg_multipliers[category] = multiplier
         total_effective = sum(effective_pool.values())
 
-        running_income = taxable_income
         if total_effective:
           # Allocate proportionally by effective balance so each asset contributes equally
           # in post-tax terms. For ordinary income accounts, gross up using a running income
@@ -382,15 +382,13 @@ class Strategy:
         # taxable income on withdrawal, so drawing them proportionally covers bracket-diverted
         # shortfall from pass 1 without pushing income into the next bracket.
         if shortfall > 0:
-          tax_free_pool = {}
-          for category, balance in new_assets.items():
-            if category == AssetCategory.BONDS and balance > 0:
-              tax_free_pool[category] = balance
-            elif category == AssetCategory.CASH and balance > 0:
-              tax_free_pool[category] = balance
-            elif (category.is_roth and balance > 0
-                  and age >= category.withdrawal_min_age):
-              tax_free_pool[category] = balance
+          tax_free_pool = {
+            category: balance
+            for category, balance in new_assets.items()
+            if balance > 0
+            and (category.cash_equivalent
+                 or (category.is_roth and age >= category.withdrawal_min_age))
+          }
           total_tax_free = sum(tax_free_pool.values())
           if total_tax_free > 0:
             original_shortfall = shortfall

@@ -74,6 +74,11 @@ class AssetCategory(Enum):
     return 0
 
   @property
+  def cash_equivalent(self) -> bool:
+    """True for liquid, tax-free-on-withdrawal accounts treated as cash in withdrawal pools."""
+    return self in {AssetCategory.CASH, AssetCategory.BONDS}
+
+  @property
   def ordinary_income(self) -> bool:
     """True if withdrawals from this account are taxed as ordinary income."""
     return self in {AssetCategory.PLAN_401K, AssetCategory.IRA}

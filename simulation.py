@@ -98,23 +98,15 @@ class Simulation:
     Args:
       retirement_year: Retirement year (when job income stops).
     """
-    # The data year is the CSV anchor year, stored as self.data_year. We derive it here from the
-    # source objects as a consistency check; both should agree.
-    data_year = max(
-      self.assets._last_historical_year or retirement_year,
-      self.budget._last_historical_year or retirement_year,
-      self.income._last_historical_year or retirement_year
-    )
-
     # Get initial asset values from the data year
     current_assets = {}
     for category in AssetCategory:
-      value = self.assets.get_category(category, data_year)
+      value = self.assets.get_category(category, self.data_year)
       if value > 0:
         current_assets[category] = value
 
     # Project year by year, applying income, budget, and default growth rates
-    for year in range(data_year, retirement_year):
+    for year in range(self.data_year, retirement_year):
       age = self.current_age + (year - self.data_year)
 
       year_income = self.income.get(year, retired=False)
