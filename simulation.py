@@ -18,17 +18,6 @@ from strategy import Strategy
 from tax import Tax
 
 
-# Asset categories that track S&P 500 performance
-_STOCK_LIKE_ASSETS = {
-  AssetCategory.STOCKS,
-  AssetCategory.PLAN_401K,
-  AssetCategory.ROTH_401K,
-  AssetCategory.IRA,
-  AssetCategory.ROTH_IRA,
-  AssetCategory.PLAN_529,
-  AssetCategory.HSA,
-}
-
 
 @dataclass
 class SimulationResult:
@@ -271,7 +260,7 @@ class Simulation:
 
         new_assets = {}
         for category, value in current_assets.items():
-          growth_rate = sp500_return if category in _STOCK_LIKE_ASSETS else None
+          growth_rate = sp500_return if category.tracks_sp500 else None
           new_assets[category] = self.assets.apply_year(category, year + 1, value, growth_rate)
 
         current_assets = new_assets

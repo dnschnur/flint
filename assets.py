@@ -46,6 +46,56 @@ class AssetCategory(Enum):
         return cat
     raise ValueError(f'Unrecognized asset category "{name}".')
 
+  @property
+  def is_roth(self) -> bool:
+    """True for Roth accounts (tax-free growth and withdrawals)."""
+    return self in {AssetCategory.ROTH_401K, AssetCategory.ROTH_IRA}
+
+  @property
+  def is_reserved(self) -> bool:
+    """True for accounts reserved for specific uses and excluded from general withdrawal pools."""
+    return self in {AssetCategory.HSA, AssetCategory.PLAN_529, AssetCategory.REAL_ESTATE}
+
+  @property
+  def subject_to_rmd(self) -> bool:
+    """True for accounts subject to Required Minimum Distributions."""
+    return self in {AssetCategory.PLAN_401K, AssetCategory.IRA}
+
+  @property
+  def withdrawal_min_age(self) -> int:
+    """Minimum age for penalty-free withdrawals, or 0 if there is no restriction.
+
+    Based on the standard 59½ rule, using 59 as the annual proxy (you will be 59½ sometime
+    during the year you are 59). RMDs are mandatory and are never blocked by this check.
+    """
+    if self in {AssetCategory.PLAN_401K, AssetCategory.IRA,
+                AssetCategory.ROTH_401K, AssetCategory.ROTH_IRA}:
+      return 59
+    return 0
+
+  @property
+  def ordinary_income(self) -> bool:
+    """True if withdrawals from this account are taxed as ordinary income."""
+    return self in {AssetCategory.PLAN_401K, AssetCategory.IRA}
+
+  @property
+  def capital_gains(self) -> bool:
+    """True if withdrawals from this account include a capital gains component."""
+    return self == AssetCategory.STOCKS
+
+  @property
+  def tracks_sp500(self) -> bool:
+    """True if this account's growth tracks the S&P 500 rather than a fixed rate."""
+    return self in {
+      AssetCategory.STOCKS,
+      AssetCategory.PLAN_401K,
+      AssetCategory.ROTH_401K,
+      AssetCategory.IRA,
+      AssetCategory.ROTH_IRA,
+      AssetCategory.PLAN_529,
+      AssetCategory.HSA,
+    }
+
 
 class Assets:
   """Asset tracking with historical data and projection rules.

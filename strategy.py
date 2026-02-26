@@ -12,97 +12,12 @@ from rmd import RMD
 from tax import Tax
 
 
-# Mapping from budget categories to corresponding asset categories
-_BUDGET_TO_ASSET_CATEGORIES = {
-  BudgetCategory.PRE_TAX_401K: AssetCategory.PLAN_401K,
-  BudgetCategory.AFTER_TAX_401K: AssetCategory.PLAN_401K,
-  BudgetCategory.PRE_TAX_ROTH_401K: AssetCategory.ROTH_401K,
-  BudgetCategory.AFTER_TAX_ROTH_401K: AssetCategory.ROTH_401K,
-  BudgetCategory.IRA: AssetCategory.IRA,
-  BudgetCategory.ROTH_IRA: AssetCategory.ROTH_IRA,
-  BudgetCategory.PLAN_529: AssetCategory.PLAN_529,
-  BudgetCategory.HSA: AssetCategory.HSA,
-  BudgetCategory.STOCKS: AssetCategory.STOCKS,
-  BudgetCategory.BONDS: AssetCategory.BONDS,
-  BudgetCategory.EMPLOYER_401K_MATCH: AssetCategory.PLAN_401K,
-}
-
-# Budget categories that represent pre-tax contributions. Income is allocated to these
-# first, before income tax is applied, since they reduce taxable income.
-_PRE_TAX_CONTRIBUTION_CATEGORIES = {
-  BudgetCategory.PRE_TAX_401K,
-  BudgetCategory.PRE_TAX_ROTH_401K,
-  BudgetCategory.IRA,
-}
-
-# Budget categories that represent retirement account contributions.
-# These are skipped during retirement since contributions are no longer made.
-_RETIREMENT_CONTRIBUTION_CATEGORIES = {
-  BudgetCategory.PRE_TAX_401K,
-  BudgetCategory.AFTER_TAX_401K,
-  BudgetCategory.PRE_TAX_ROTH_401K,
-  BudgetCategory.AFTER_TAX_ROTH_401K,
-  BudgetCategory.IRA,
-  BudgetCategory.ROTH_IRA,
-  BudgetCategory.PLAN_529,
-  BudgetCategory.HSA,
-  BudgetCategory.EMPLOYER_401K_MATCH,
-}
-
-# Asset categories subject to RMDs (traditional/pre-tax retirement accounts)
-_RMD_CATEGORIES = {
-  AssetCategory.PLAN_401K,  # Traditional 401K
-  AssetCategory.IRA,         # Traditional IRA
-}
-
 # Pre-retirement liquid asset drawdown priority order (Cash first, then Bonds, then Stocks).
-_LIQUID_ASSET_CATEGORIES = (
+_LIQUID_ASSETS = (
   AssetCategory.CASH,
   AssetCategory.BONDS,
   AssetCategory.STOCKS,
 )
-
-# Asset categories excluded from the general proportional withdrawal pool during retirement.
-# HSA and 529 are reserved for specific expense categories; Real Estate is illiquid and can
-# only be accessed via explicit rules (e.g. a downsizing rule that converts equity to cash).
-_RESERVED_ASSET_CATEGORIES = {
-  AssetCategory.HSA,
-  AssetCategory.PLAN_529,
-  AssetCategory.REAL_ESTATE,
-}
-
-# Roth asset categories excluded from the general pool and only drawn as a last resort.
-# These accounts grow completely tax-free, Roth IRA has no RMDs, and withdrawals are tax-free,
-# making them the most valuable accounts to preserve for as long as possible.
-_ROTH_ASSET_CATEGORIES = {
-  AssetCategory.ROTH_401K,
-  AssetCategory.ROTH_IRA,
-}
-
-# Asset categories whose retirement withdrawals are taxed as ordinary income.
-# Roth accounts are excluded as withdrawals from them are tax-free.
-_ORDINARY_INCOME_ASSET_CATEGORIES = {
-  AssetCategory.PLAN_401K,
-  AssetCategory.IRA,
-}
-
-# Asset categories whose retirement withdrawals include a capital gains component.
-# The CG fraction grows linearly from 0 at the start of retirement to 1 at the end.
-_CAPITAL_GAINS_ASSET_CATEGORIES = {
-  AssetCategory.STOCKS,
-}
-
-# Minimum age for penalty-free withdrawals, keyed by asset category. Withdrawals before
-# this age incur a 10% IRS penalty; the strategy avoids these accounts entirely rather
-# than paying the penalty. Based on the standard 59½ rule, using age 59 as the annual
-# proxy (you will be 59½ sometime during the year you are 59).
-# Note: RMDs are mandatory distributions and are never blocked by this check.
-_EARLY_WITHDRAWAL_MIN_AGE = {
-  AssetCategory.PLAN_401K: 59,
-  AssetCategory.IRA: 59,
-  AssetCategory.ROTH_401K: 59,
-  AssetCategory.ROTH_IRA: 59,
-}
 
 
 def _withdrawal_multiplier(
@@ -127,10 +42,10 @@ def _withdrawal_multiplier(
   Returns:
     Gross-up multiplier >= 1.0.
   """
-  if category in _CAPITAL_GAINS_ASSET_CATEGORIES and cg_fraction:
+  if category.capital_gains and cg_fraction:
     rate = tax.marginal_rate(taxable_income, year, capital_gains=True)
     return 1.0 + cg_fraction * rate
-  if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
+  if category.ordinary_income:
     rate = tax.marginal_rate(taxable_income, year, capital_gains=False)
     return 1.0 + rate
   return 1.0
@@ -283,8 +198,8 @@ class Strategy:
 
     # Calculate and withdraw RMDs first; they count as ordinary income.
     rmd_income = 0.0
-    for asset_category in _RMD_CATEGORIES:
-      if new_assets[asset_category] > 0:
+    for asset_category in AssetCategory:
+      if asset_category.subject_to_rmd and new_assets[asset_category] > 0:
         rmd_amount = self.rmd.calculate(age, new_assets[asset_category])
         if rmd_amount > 0:
           new_assets[asset_category] -= rmd_amount
@@ -296,8 +211,8 @@ class Strategy:
     # These reduce taxable income since they come out of gross income before tax.
     if not retired:
       for category, amount in budget.items():
-        if category in _PRE_TAX_CONTRIBUTION_CATEGORIES:
-          new_assets[_BUDGET_TO_ASSET_CATEGORIES[category]] += amount
+        if category.is_pre_tax_contribution:
+          new_assets[category.asset_category] += amount
           remaining -= amount
 
       # Apply employer 401K match. This does not affect taxable income.
@@ -315,13 +230,13 @@ class Strategy:
       if category == BudgetCategory.EMPLOYER_401K_MATCH:
         new_assets[AssetCategory.PLAN_401K] += amount
         continue
-      if category in _PRE_TAX_CONTRIBUTION_CATEGORIES:
+      if category.is_pre_tax_contribution:
         continue  # Already handled previously
-      if retired and category in _RETIREMENT_CONTRIBUTION_CATEGORIES:
+      if retired and category.is_retirement_contribution:
         continue  # No contributions during retirement
 
-      if category in _BUDGET_TO_ASSET_CATEGORIES:
-        new_assets[_BUDGET_TO_ASSET_CATEGORIES[category]] += amount
+      if category.asset_category:
+        new_assets[category.asset_category] += amount
       remaining -= amount
 
     # Always withdraw 529-eligible school expenses from the 529 plan, regardless of whether income
@@ -339,7 +254,7 @@ class Strategy:
       if not retired:
         # Pre-retirement: withdraw from liquid assets in priority order.
         if shortfall:
-          for asset_category in _LIQUID_ASSET_CATEGORIES:
+          for asset_category in _LIQUID_ASSETS:
             if shortfall <= 0:
               break
             withdrawal = min(new_assets[asset_category], shortfall)
@@ -374,11 +289,11 @@ class Strategy:
           category: balance
           for category, balance in new_assets.items()
           if category != AssetCategory.CASH
-          and category not in _RESERVED_ASSET_CATEGORIES
-          and category not in _ROTH_ASSET_CATEGORIES
+          and not category.is_reserved
+          and not category.is_roth
           and category != AssetCategory.BONDS
           and balance > 0
-          and age >= _EARLY_WITHDRAWAL_MIN_AGE.get(category, 0)
+          and age >= category.withdrawal_min_age
         }
 
         # Compute each asset's effective (post-tax) balance for proportional allocation.
@@ -389,7 +304,7 @@ class Strategy:
         effective_pool = {}
         cg_multipliers = {}
         for category, balance in general_pool.items():
-          if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
+          if category.ordinary_income:
             incremental_tax = self.tax.calculate(taxable_income + balance, year) - base_tax
             effective_pool[category] = balance - incremental_tax
           else:
@@ -409,7 +324,7 @@ class Strategy:
             effective_balance = effective_pool[category]
             proportion = effective_balance / total_effective
             net_needed = min(effective_balance, original_shortfall * proportion)
-            if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
+            if category.ordinary_income:
               gross_withdrawal = self.tax.gross_for_net_ordinary(net_needed, running_income, year)
               # Cap at the bracket boundary (to avoid paying the higher rate) and at the available
               # balance (effective_pool uses taxable_income's rate, but running_income may be higher
@@ -440,8 +355,8 @@ class Strategy:
               tax_free_pool[category] = balance
             elif category == AssetCategory.CASH and balance > 0:
               tax_free_pool[category] = balance
-            elif (category in _ROTH_ASSET_CATEGORIES and balance > 0
-                  and age >= _EARLY_WITHDRAWAL_MIN_AGE.get(category, 0)):
+            elif (category.is_roth and balance > 0
+                  and age >= category.withdrawal_min_age):
               tax_free_pool[category] = balance
           total_tax_free = sum(tax_free_pool.values())
           if total_tax_free > 0:
@@ -460,10 +375,10 @@ class Strategy:
             category: balance
             for category, balance in new_assets.items()
             if category != AssetCategory.CASH
-            and category not in _RESERVED_ASSET_CATEGORIES
-            and category not in _ROTH_ASSET_CATEGORIES
+            and not category.is_reserved
+            and not category.is_roth
             and balance
-            and age >= _EARLY_WITHDRAWAL_MIN_AGE.get(category, 0)
+            and age >= category.withdrawal_min_age
           }
           total_fallback = sum(fallback_pool.values())
           if total_fallback:
@@ -471,7 +386,7 @@ class Strategy:
             for category, balance in fallback_pool.items():
               proportion = balance / total_fallback
               net_target = original_shortfall * proportion
-              if category in _ORDINARY_INCOME_ASSET_CATEGORIES:
+              if category.ordinary_income:
                 gross_needed = self.tax.gross_for_net_ordinary(net_target, running_income, year)
                 gross_withdrawal = min(balance, gross_needed)
                 net_covered = gross_withdrawal - (

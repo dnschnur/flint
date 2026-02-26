@@ -8,6 +8,7 @@ from collections import defaultdict
 from enum import Enum
 from functools import cache
 
+from assets import AssetCategory
 from rules import Rule, parse_rule
 
 
@@ -49,24 +50,25 @@ class BudgetCategory(Enum):
   OTHER = ('Other', 0.03)
 
   # Contributions to asset classes.
-  PRE_TAX_401K = ('Pre-Tax 401K', 0.02)
-  AFTER_TAX_401K = ('After-Tax 401K', 0.02)
-  PRE_TAX_ROTH_401K = ('Pre-Tax 401K (Roth)', 0.02)
-  AFTER_TAX_ROTH_401K = ('After-Tax 401K (Roth)', 0.02)
-  IRA = ('IRA', 0.02)
-  ROTH_IRA = ('Roth IRA', 0.02)
-  PLAN_529 = ('529 Plan', 0.02)
-  HSA = ('HSA', 0.02)
-  STOCKS = ('Stocks', 0.02)
-  BONDS = ('Bonds', 0.02)
+  PRE_TAX_401K = ('Pre-Tax 401K', 0.02, AssetCategory.PLAN_401K)
+  AFTER_TAX_401K = ('After-Tax 401K', 0.02, AssetCategory.PLAN_401K)
+  PRE_TAX_ROTH_401K = ('Pre-Tax 401K (Roth)', 0.02, AssetCategory.ROTH_401K)
+  AFTER_TAX_ROTH_401K = ('After-Tax 401K (Roth)', 0.02, AssetCategory.ROTH_401K)
+  IRA = ('IRA', 0.02, AssetCategory.IRA)
+  ROTH_IRA = ('Roth IRA', 0.02, AssetCategory.ROTH_IRA)
+  PLAN_529 = ('529 Plan', 0.02, AssetCategory.PLAN_529)
+  HSA = ('HSA', 0.02, AssetCategory.HSA)
+  STOCKS = ('Stocks', 0.02, AssetCategory.STOCKS)
+  BONDS = ('Bonds', 0.02, AssetCategory.BONDS)
 
   # Employer 401K match. Either a fixed dollar amount per year, or a percentage of the pre-tax
   # 401K contribution (e.g. '50%'). Not deducted from income.
-  EMPLOYER_401K_MATCH = ('Employer 401K Match', 0.02)
+  EMPLOYER_401K_MATCH = ('Employer 401K Match', 0.02, AssetCategory.PLAN_401K)
 
-  def __init__(self, display_name: str, inflation: float):
+  def __init__(self, display_name: str, inflation: float, asset_category: 'AssetCategory | None' = None):
     self.display_name = display_name
     self.inflation = inflation
+    self.asset_category = asset_category
 
   @staticmethod
   @cache
@@ -80,6 +82,30 @@ class BudgetCategory(Enum):
       if cat.display_name == name:
         return cat
     raise ValueError(f'Unrecognized budget category "{name}".')
+
+  @property
+  def is_pre_tax_contribution(self) -> bool:
+    """True for budget items that are pre-tax contributions reducing taxable income."""
+    return self in {
+      BudgetCategory.PRE_TAX_401K,
+      BudgetCategory.PRE_TAX_ROTH_401K,
+      BudgetCategory.IRA,
+    }
+
+  @property
+  def is_retirement_contribution(self) -> bool:
+    """True for budget items that represent contributions which stop at retirement."""
+    return self in {
+      BudgetCategory.PRE_TAX_401K,
+      BudgetCategory.AFTER_TAX_401K,
+      BudgetCategory.PRE_TAX_ROTH_401K,
+      BudgetCategory.AFTER_TAX_ROTH_401K,
+      BudgetCategory.IRA,
+      BudgetCategory.ROTH_IRA,
+      BudgetCategory.PLAN_529,
+      BudgetCategory.HSA,
+      BudgetCategory.EMPLOYER_401K_MATCH,
+    }
 
 
 class Budget:
