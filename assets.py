@@ -6,7 +6,7 @@ import csv
 
 from collections import defaultdict
 from enum import Enum
-from functools import cache
+from functools import cache, cached_property
 
 from rules import Rule, parse_rule
 
@@ -46,22 +46,22 @@ class AssetCategory(Enum):
         return cat
     raise ValueError(f'Unrecognized asset category "{name}".')
 
-  @property
+  @cached_property
   def is_roth(self) -> bool:
     """True for Roth accounts (tax-free growth and withdrawals)."""
     return self in {AssetCategory.ROTH_401K, AssetCategory.ROTH_IRA}
 
-  @property
+  @cached_property
   def is_reserved(self) -> bool:
     """True for accounts reserved for specific uses and excluded from general withdrawal pools."""
     return self in {AssetCategory.HSA, AssetCategory.PLAN_529, AssetCategory.REAL_ESTATE}
 
-  @property
+  @cached_property
   def subject_to_rmd(self) -> bool:
     """True for accounts subject to Required Minimum Distributions."""
     return self in {AssetCategory.PLAN_401K, AssetCategory.IRA}
 
-  @property
+  @cached_property
   def withdrawal_min_age(self) -> int:
     """Minimum age for penalty-free withdrawals, or 0 if there is no restriction.
 
@@ -73,22 +73,22 @@ class AssetCategory(Enum):
       return 59
     return 0
 
-  @property
+  @cached_property
   def cash_equivalent(self) -> bool:
     """True for liquid, tax-free-on-withdrawal accounts treated as cash in withdrawal pools."""
     return self in {AssetCategory.CASH, AssetCategory.BONDS}
 
-  @property
+  @cached_property
   def ordinary_income(self) -> bool:
     """True if withdrawals from this account are taxed as ordinary income."""
     return self in {AssetCategory.PLAN_401K, AssetCategory.IRA}
 
-  @property
+  @cached_property
   def capital_gains(self) -> bool:
     """True if withdrawals from this account include a capital gains component."""
     return self == AssetCategory.STOCKS
 
-  @property
+  @cached_property
   def tracks_sp500(self) -> bool:
     """True if this account's growth tracks the S&P 500 rather than a fixed rate."""
     return self in {

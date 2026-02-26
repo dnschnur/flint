@@ -6,7 +6,7 @@ import csv
 
 from collections import defaultdict
 from enum import Enum
-from functools import cache
+from functools import cache, cached_property
 
 from assets import AssetCategory
 from rules import Rule, parse_rule
@@ -82,7 +82,7 @@ class BudgetCategory(Enum):
         return cat
     raise ValueError(f'Unrecognized budget category "{name}".')
 
-  @property
+  @cached_property
   def is_pre_tax_contribution(self) -> bool:
     """True for budget items that are pre-tax contributions reducing taxable income."""
     return self in {
@@ -90,7 +90,7 @@ class BudgetCategory(Enum):
       BudgetCategory.IRA,
     }
 
-  @property
+  @cached_property
   def is_retirement_contribution(self) -> bool:
     """True for budget items that represent contributions which stop at retirement."""
     return self in {
