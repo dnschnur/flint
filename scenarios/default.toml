@@ -8,12 +8,28 @@ year = 2025
 "401K" = 1000000
 "Roth IRA" = 200000
 "Stocks" = 700000
+"Real Estate" = 1000000
+
+rules = [
+  # Selling a house to downsize to a cheaper cost of living area
+  {year = 2040, "Cash" = "+200000", "Real Estate" = "=500000"},
+]
+
+[assets.growth]
+"Real Estate" = 0  # California real estate is overvalued and won't grow anymore
 
 [budget]
 "Housing" = 50000
 "Health" = 8000
 "Food" = 40000
 "Pre-Tax 401K" = 20000
+
+rules = [
+  # Child moves out of the house to attend private university
+  {year = 2030, "Health" = "-20%", "School" = "=80000", "529 Eligible" = "100%", "Food" = "-20%", "Other" = "-20%"},
+  # Child graduates from university
+  {year = 2034, "School" = "=0", "529 Eligible" = "0%"},
+]
 
 [income]
 "Job Income" = 200000
