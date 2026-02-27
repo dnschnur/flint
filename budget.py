@@ -191,9 +191,7 @@ class Budget:
           self._load_employer_match(year, value, update_amounts=False)
         else:
           category = _parse_budget_category(key)
-          # Bare numbers in a rule entry are treated as SetAmount.
-          value_str = f'={value}' if not isinstance(value, str) else str(value).strip()
-          if rule := parse_rule(value_str):
+          if rule := parse_rule(value):
             self._rules[category][year] = rule
 
   def _load_employer_match(self, year: int, value, update_amounts: bool) -> None:
@@ -227,8 +225,7 @@ class Budget:
       if update_amounts:
         self._amounts[BudgetCategory.EMPLOYER_401K_MATCH] = float(value)
       else:
-        # In a rule entry, a plain number is treated as SetAmount.
-        if rule := parse_rule(f'={value_str}'):
+        if rule := parse_rule(value):
           self._rules[BudgetCategory.EMPLOYER_401K_MATCH][year] = rule
 
   @cache

@@ -84,10 +84,10 @@ class AdjustByAmount(Rule):
     return previous + self.amount
 
 
-def parse_rule(rule_str: str) -> Rule | None:
-  """Parse a rule string.
+def parse_rule(value: str | int | float) -> Rule | None:
+  """Parse a rule value into a Rule object.
 
-  Formats:
+  Numeric values (int or float) are always treated as SetAmount. String formats:
     "=##.#"   -> SetAmount          (apply_growth=False by default)
     "+##.#"   -> AdjustByAmount     (apply_growth=True by default)
     "-##.#"   -> AdjustByAmount     (apply_growth=True by default)
@@ -99,11 +99,15 @@ def parse_rule(rule_str: str) -> Rule | None:
   the rule type's default. The suffix is stripped before parsing the value.
 
   Args:
-    rule_str: The rule string to parse.
+    value: A numeric value or rule string to parse.
 
   Returns:
     The parsed Rule object, or None if no rule.
   """
+  if isinstance(value, (int, float)):
+    return SetAmount(float(value))
+
+  rule_str = value
   if not rule_str or not rule_str.strip():
     return None
 

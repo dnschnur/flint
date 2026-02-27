@@ -157,9 +157,7 @@ class Assets:
       for key, value in rule_entry.items():
         if key == 'year':
           continue
-        # Bare numbers in a rule entry are treated as SetAmount.
-        value_str = f'={value}' if not isinstance(value, str) else str(value).strip()
-        if rule := parse_rule(value_str):
+        if rule := parse_rule(value):
           self._rules[_parse_asset_category(key)][year] = rule
 
   @cache
