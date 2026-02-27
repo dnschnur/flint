@@ -1,18 +1,12 @@
-"""Asset tracking by category, with historical data and forward projection."""
+"""Asset tracking by category, with a base-year snapshot and forward projection."""
 
 from __future__ import annotations
-
-import csv
 
 from collections import defaultdict
 from enum import Enum
 from functools import cache, cached_property
 
 from rules import Rule, parse_rule
-
-
-# CSV columns that are always ignored during parsing (e.g. human-readable notes).
-_IGNORED_COLUMNS = {'Year', 'Notes'}
 
 
 class AssetCategory(Enum):
@@ -102,106 +96,83 @@ class AssetCategory(Enum):
     }
 
 
+def _parse_asset_category(name: str) -> AssetCategory:
+  """Parse an asset category by enum member name or display name.
+
+  Tries the enum member name first (e.g. 'PLAN_401K'), then the display name (e.g. '401K').
+
+  Raises:
+    ValueError: If the name doesn't match any asset category.
+  """
+  try:
+    return AssetCategory[name.upper()]
+  except KeyError:
+    return AssetCategory.from_name(name)
+
+
 class Assets:
-  """Asset tracking with historical data and projection rules.
+  """Asset tracking with a base-year snapshot and forward projection rules.
 
   Supports multiple asset categories with different growth rates and custom projection rules for
   each category.
   """
 
-  def __init__(self, path: str, growth: dict[str, float] | None = None):
-    """Initialize and load historical asset data from a CSV file.
+  def __init__(self, base_year: int, data: dict):
+    """Initialize from a scenario TOML [assets] data dict.
 
     Args:
-      path: Path to the CSV file containing historical asset data.
-      growth: Optional per-category growth rate overrides, keyed by enum member name
-          (e.g. 'roth_401k') with values as fractions (e.g. 0.05 for 5%). Overrides the default
-          growth rate on the AssetCategory enum for projection and pre-retirement growth.
+      base_year: The snapshot year for the base amounts.
+      data: Dict from the [assets] TOML section. Top-level keys are asset category names
+          (either enum member names like 'PLAN_401K' or display names like '401K'), with numeric
+          values for the base-year balance. Reserved keys:
+            'rules': list of per-year rule dicts, each with a 'year' int key and category keys
+                whose string values are rule strings (e.g. '+900000', '=2300000').
+            'growth': sub-dict of per-category growth rate overrides, where values are
+                percentages (e.g. 0 for 0%, 7 for 7%).
 
     Raises:
-      ValueError: If any key in growth does not match a known AssetCategory name.
+      ValueError: If any key does not match a known AssetCategory.
     """
-    # Historical data: {year: {category: amount}}
-    self._historical: dict[int, dict[AssetCategory, float]] = {}
+    self.base_year = base_year
 
-    # Latest year with historical data
-    self._last_historical_year: int | None = None
+    # Base-year amounts by category.
+    self._amounts: dict[AssetCategory, float] = {}
 
-    # Rules mapping from (category, year) to rule
+    # Rules mapping from (category, year) to rule.
     self._rules: defaultdict[AssetCategory, dict[int, Rule]] = defaultdict(dict)
 
     # Per-category growth rate overrides (fraction, e.g. 0.05 for 5%).
     self._growth: dict[AssetCategory, float] = {}
 
-    if growth:
-      for key, value in growth.items():
-        try:
-          category = AssetCategory[key.upper()]
-        except KeyError:
-          raise ValueError(f'Unknown asset category in growth overrides: "{key}"')
-        self._growth[category] = value
+    for key, value in data.items():
+      if key in ('rules', 'growth'):
+        continue
+      self._amounts[_parse_asset_category(key)] = float(value)
 
-    self._load_csv(path)
+    for key, value in data.get('growth', {}).items():
+      self._growth[_parse_asset_category(key)] = float(value) / 100.0
+
+    for rule_entry in data.get('rules', []):
+      year = int(rule_entry['year'])
+      for key, value in rule_entry.items():
+        if key == 'year':
+          continue
+        # Bare numbers in a rule entry are treated as SetAmount.
+        value_str = f'={value}' if not isinstance(value, str) else str(value).strip()
+        if rule := parse_rule(value_str):
+          self._rules[_parse_asset_category(key)][year] = rule
 
   @cache
   def get_category(self, category: AssetCategory, year: int) -> float:
     """Returns the amount for a category in a given year, defaulting to zero."""
-    if year in self._historical and category in self._historical[year]:
-      return self._historical[year][category]
-    if self._last_historical_year and year > self._last_historical_year:
+    if year > self.base_year:
       return self._project_category(category, year)
-    return 0.0
+    return self._amounts.get(category, 0.0)
 
   @cache
   def get_total(self, year: int) -> float:
     """Returns the total assets across all categories for a specific year."""
-    if year in self._historical:
-      categories = self._historical[year].keys()
-    elif self._last_historical_year and year > self._last_historical_year:
-      # For future years, use categories from the last historical year.
-      categories = self._historical.get(self._last_historical_year, {}).keys()
-    else:
-      return 0.0
-
-    return sum(self.get_category(category, year) for category in categories)
-
-  def _load_csv(self, path: str) -> None:
-    """Load historical asset data from the given CSV file path.
-
-    Each non-Year column names an asset category. Values are interpreted as rules if they parse
-    as one (e.g. '+3%', '=20000'), or as fixed historical amounts otherwise. A row advances
-    _last_historical_year only if it contains at least one fixed amount.
-
-    Expected format:
-      Year,Cash,401K,...
-      2025,10000,500000
-      2026,+3%,+5%
-      2027,,=600000
-    """
-    with open(path, 'r') as f:
-      reader = csv.DictReader(f)
-      for row in reader:
-        year = int(row['Year'])
-        year_data = {}
-
-        for col_name, value in row.items():
-          if col_name in _IGNORED_COLUMNS:
-            continue
-
-          value = value.strip()
-          if not value:
-            continue
-
-          category = AssetCategory.from_name(col_name)
-          if rule := parse_rule(year, value):
-            self._rules[category][year] = rule
-          else:
-            year_data[category] = float(value)
-
-        if year_data:
-          self._historical[year] = year_data
-          if not self._last_historical_year or year > self._last_historical_year:
-            self._last_historical_year = year
+    return sum(self.get_category(category, year) for category in self._amounts)
 
   def apply_year(
     self, category: AssetCategory, year: int, amount: float, growth_rate: float | None = None
@@ -210,7 +181,7 @@ class Assets:
 
     This is used by the simulation loops to advance each category's balance by a single year,
     respecting any rules defined for that year. Unlike _project_category, it operates on an
-    externally-supplied balance rather than replaying from historical data — so it correctly
+    externally-supplied balance rather than replaying from the base year — so it correctly
     handles balances that have been modified by income, withdrawals, and contributions.
 
     Args:
@@ -236,8 +207,8 @@ class Assets:
   def _project_category(self, category: AssetCategory, year: int) -> float:
     """Returns the projected assets for a category in a future year.
 
-    Applies rules in order from the last historical year to the target year, delegating each
-    year's step to apply_year(). Default growth is always applied unless a rule suppresses it.
+    Applies rules in order from the base year to the target year, delegating each year's step
+    to apply_year(). Default growth is always applied unless a rule suppresses it.
 
     Args:
       category: The asset category to project.
@@ -246,10 +217,7 @@ class Assets:
     Returns:
       The projected asset amount for the category in the given year.
     """
-    if not self._last_historical_year:
-      return 0.0
-
-    amount = self._historical.get(self._last_historical_year, {}).get(category, 0.0)
-    for i in range(self._last_historical_year + 1, year + 1):
+    amount = self._amounts.get(category, 0.0)
+    for i in range(self.base_year + 1, year + 1):
       amount = self.apply_year(category, i, amount)
     return amount

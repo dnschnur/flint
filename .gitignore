@@ -3,5 +3,6 @@ __pycache__/
 
 CLAUDE.md
 
-# User scenario directories (subdirectories of data/)
-data/*/
+# User scenario TOML files (all except the committed default)
+scenarios/*.toml
+!scenarios/default.toml

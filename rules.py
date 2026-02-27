@@ -1,9 +1,9 @@
 """Projection rules for assets, budgets, and income.
 
 Defines the Rule base class and concrete implementations, used to override default growth and
-inflation rates in CSV data files.
+inflation rates in scenario data.
 
-Also provides parse_rule() to construct a Rule from a CSV rule string.
+Also provides parse_rule() to construct a Rule from a rule string.
 
 Growth behavior
 ---------------
@@ -84,8 +84,8 @@ class AdjustByAmount(Rule):
     return previous + self.amount
 
 
-def parse_rule(year: int, rule_str: str) -> Rule | None:
-  """Parse a rule string from CSV format.
+def parse_rule(rule_str: str) -> Rule | None:
+  """Parse a rule string.
 
   Formats:
     "=##.#"   -> SetAmount          (apply_growth=False by default)
@@ -99,8 +99,7 @@ def parse_rule(year: int, rule_str: str) -> Rule | None:
   the rule type's default. The suffix is stripped before parsing the value.
 
   Args:
-    year: The year the rule applies to (unused, retained for call-site clarity).
-    rule_str: The rule string from the CSV.
+    rule_str: The rule string to parse.
 
   Returns:
     The parsed Rule object, or None if no rule.

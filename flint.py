@@ -9,8 +9,6 @@ import os
 import statistics
 import tomllib
 
-from datetime import datetime
-
 from assets import Assets, AssetCategory
 from budget import Budget
 from income import Income
@@ -18,93 +16,51 @@ from output import print_assets_table, print_median_scenario_table, print_min_sc
 from rmd import RMD
 from simulation import Simulation
 from tax import Tax
-from util import DataPaths
 
 
-def _load_scenario_info(directory: str) -> dict:
-  """Load optional scenario metadata from info.toml.
+def _load_scenario(name: str) -> dict:
+  """Load a scenario from scenarios/<name>.toml.
 
   Args:
-    directory: Path to the scenario directory.
+    name: The scenario name (without .toml extension).
 
   Returns:
-    Dict of key-value pairs from the TOML file, or empty dict if the file doesn't exist.
+    Dict of key-value pairs from the TOML file.
+
+  Raises:
+    FileNotFoundError: If the scenario file does not exist.
   """
-  path = os.path.join(directory, 'info.toml')
+  path = os.path.join('scenarios', f'{name}.toml')
   if not os.path.exists(path):
-    return {}
+    raise FileNotFoundError(f'Scenario "{name}" not found: {path}')
   with open(path, 'rb') as f:
     return tomllib.load(f)
 
 
-def _resolve_data_paths(scenario: str | None, state: str | None) -> DataPaths:
-  """Resolve the paths to assets, budget, income, tax, and optional state tax CSV files.
+def _resolve_tax_paths(country: str, state: str | None) -> tuple[str, str, str | None]:
+  """Resolve the paths to tax CSV files for a given country and optional state.
 
-  Required files (assets, budget, income) are read from data/<scenario>/ when a scenario is
-  given, with a hard error if any are missing. Tax files (income_tax, capital_gains_tax) are
-  optional per-scenario: the scenario's copy is used if present, otherwise data/ defaults.
-
-  When a state is given, income_tax_{state}.csv is resolved the same way: the scenario's copy
-  is used if present, otherwise the data/ copy. A hard error is raised if no copy exists.
+  Files are read from data/tax/{country}/: income.csv and capital_gains.csv for federal taxes,
+  and income_{state}.csv for state income tax when a state is given.
 
   Args:
-    scenario: Name of the scenario subdirectory under data/, or None.
-    state: Two-letter state code (e.g. 'ca'), or None.
+    country: ISO country code in lowercase (e.g. 'us').
+    state: Two-letter state code in lowercase (e.g. 'ca'), or None.
 
   Returns:
-    A DataPaths with all resolved file paths.
+    A (income_tax_path, capital_gains_path, state_income_tax_path) tuple.
 
   Raises:
-    FileNotFoundError: If any required files are missing from the scenario directory, or if a
-        state is given but no matching income_tax_{state}.csv file exists.
+    FileNotFoundError: If a state is given but no matching state tax file exists.
   """
-  if scenario:
-    directory = os.path.join('data', scenario)
-    required = [
-      os.path.join(directory, 'assets.csv'),
-      os.path.join(directory, 'budget.csv'),
-      os.path.join(directory, 'income.csv'),
-    ]
-
-    missing = [path for path in required if not os.path.exists(path)]
-    if missing:
-      raise FileNotFoundError(
-        f'Scenario "{scenario}" is missing required files: {", ".join(missing)}'
-      )
-
-    def _scenario_or_default(filename):
-      scenario_path = os.path.join(directory, filename)
-      return scenario_path if os.path.exists(scenario_path) else os.path.join('data', filename)
-
-    state_path = None
-    if state:
-      state_path = _scenario_or_default(f'income_tax_{state}.csv')
-      if not os.path.exists(state_path):
-        raise FileNotFoundError(f'State tax file not found: {state_path}')
-
-    return DataPaths(
-      assets=required[0],
-      budget=required[1],
-      income=required[2],
-      income_tax=_scenario_or_default('income_tax.csv'),
-      capital_gains_tax=_scenario_or_default('capital_gains_tax.csv'),
-      state_income_tax=state_path,
-    )
-
+  base = os.path.join('data', 'tax', country)
   state_path = None
   if state:
-    state_path = os.path.join('data', f'income_tax_{state}.csv')
+    state_path = os.path.join(base, f'income_{state}.csv')
     if not os.path.exists(state_path):
       raise FileNotFoundError(f'State tax file not found: {state_path}')
 
-  return DataPaths(
-    assets='data/assets.csv',
-    budget='data/budget.csv',
-    income='data/income.csv',
-    income_tax='data/income_tax.csv',
-    capital_gains_tax='data/capital_gains_tax.csv',
-    state_income_tax=state_path,
-  )
+  return os.path.join(base, 'income.csv'), os.path.join(base, 'capital_gains.csv'), state_path
 
 
 def main():
@@ -129,16 +85,16 @@ def main():
   parser.add_argument(
     '--scenario',
     type=str,
-    default=None,
-    help='Scenario: reads assets, budget, and income from data/<scenario>/ rather than data/'
+    default='default',
+    help='Scenario name: reads from scenarios/<name>.toml (default: "default")'
   )
   parser.add_argument(
     '--state',
     type=str,
     default=None,
     metavar='CODE',
-    help='State income tax: two-letter state code (e.g. ca). Loads income_tax_{code}.csv and '
-         'combines with federal tax. Checks the scenario directory first, then data/.'
+    help='State income tax: two-letter state code (e.g. ca). Overrides the state set in the '
+         'scenario file.'
   )
   parser.add_argument(
     '--sp500-start',
@@ -160,36 +116,28 @@ def main():
 
   args = parser.parse_args()
 
-  scenario = _load_scenario_info(os.path.join('data', args.scenario)) if args.scenario else {}
+  try:
+    scenario = _load_scenario(args.scenario)
+  except FileNotFoundError as e:
+    parser.error(str(e))
 
+  base_year = scenario.get('year', 2025)
+
+  country = scenario.get('country', 'us')
   state = args.state or scenario.get('state')
   if state:
     state = state.lower()
 
   try:
-    paths = _resolve_data_paths(args.scenario, state)
+    income_path, cg_path, state_path = _resolve_tax_paths(country, state)
   except FileNotFoundError as e:
     parser.error(str(e))
 
-  def pct_to_fraction(overrides: dict) -> dict[str, float]:
-    return {k: float(v) / 100.0 for k, v in overrides.items()}
-
-  assets = Assets(paths.assets,
-                  growth=pct_to_fraction(scenario.get('assets', {}).get('growth', {})))
-  budget = Budget(paths.budget,
-                  inflation=pct_to_fraction(scenario.get('budget', {}).get('growth', {})))
-  income = Income(paths.income)
+  assets = Assets(base_year, scenario.get('assets', {}))
+  budget = Budget(base_year, scenario.get('budget', {}))
+  income = Income(base_year, scenario.get('income', {}))
   rmd = RMD('data/rmd.csv')
-
-  current_age = args.age
-  current_year = datetime.now().year
-  data_year = max(
-    assets._last_historical_year or current_year,
-    budget._last_historical_year or current_year,
-    income._last_historical_year or current_year
-  )
-
-  tax = Tax(paths, data_year=data_year)
+  tax = Tax(income_path, cg_path, state_path, data_year=base_year)
 
   sim = Simulation(
     assets=assets,
@@ -197,8 +145,8 @@ def main():
     income=income,
     rmd=rmd,
     tax=tax,
-    current_age=current_age,
-    data_year=data_year,
+    current_age=args.age,
+    data_year=base_year,
     sp500_path='data/sp500.csv',
     simulation_min_year=args.sp500_start,
     simulation_max_year=args.sp500_end
@@ -207,7 +155,7 @@ def main():
   starting_assets = None
   for year, assets_snapshot in sim.project_pre_retirement(args.start_year):
     if args.verbose:
-      age = args.age + (year + 1 - data_year)
+      age = args.age + (year + 1 - base_year)
       print_assets_table(f'Pre-Retirement: Year {year + 1} (Age {age})', assets_snapshot)
     starting_assets = assets_snapshot
   starting_total = sum(starting_assets.values())
@@ -218,10 +166,10 @@ def main():
     print('No simulation results generated. Check your date ranges.')
     return
 
-  years_until_retirement = args.start_year - data_year
+  years_until_retirement = args.start_year - base_year
   retirement_age = args.age + years_until_retirement
 
-  years_until_end = args.end_year - data_year
+  years_until_end = args.end_year - base_year
   end_age = args.age + years_until_end
 
   totals = [sum(result.assets.values()) for result in results]

@@ -1,13 +1,11 @@
-"""Income tracking, with historical data and forward projection.
+"""Income tracking, with a base-year snapshot and forward projection.
 
 Income is split into two types:
   - Job income: Primary employment income that stops at retirement.
   - Other income: Rental properties, part-time work, etc. that continues through retirement.
 
-Each type has separate historical data and projection rules.
+Each type has a base-year value and optional projection rules.
 """
-
-import csv
 
 from functools import cache
 
@@ -15,28 +13,36 @@ from rules import Rule, parse_rule
 
 
 class Income:
-  """Income tracking with historical data and projection rules."""
+  """Income tracking with a base-year snapshot and projection rules."""
 
-  def __init__(self, path: str, default_job_increase_rate: float = 0.03):
-    """Initialize and load historical income data from a CSV file.
+  def __init__(self, base_year: int, data: dict, default_job_increase_rate: float = 0.03):
+    """Initialize from a scenario TOML [income] data dict.
 
     Args:
-      path: Path to the CSV file containing historical income data.
+      base_year: The snapshot year for the base income amounts.
+      data: Dict from the [income] TOML section. Recognized keys are 'Job Income' and
+          'Other Income', with numeric values for the base-year amounts. An optional 'rules'
+          key contains a list of per-year rule dicts with the same keys.
       default_job_increase_rate: Annual job income increase rate (default 3%).
     """
-    # Historical income, mapping from year to amount.
-    self._historical_job: dict[int, float] = {}
-    self._historical_other: dict[int, float] = {}
+    self.base_year = base_year
+    self._job_income = float(data.get('Job Income', 0))
+    self._other_income = float(data.get('Other Income', 0))
 
-    self._last_historical_year: int | None = None
-
-    # Rules mapping from year to rule
+    # Rules mapping from year to rule.
     self._rules_job: dict[int, Rule] = {}
     self._rules_other: dict[int, Rule] = {}
 
     self._default_job_increase_rate = default_job_increase_rate
 
-    self._load_csv(path)
+    for rule_entry in data.get('rules', []):
+      year = int(rule_entry['year'])
+      if 'Job Income' in rule_entry:
+        if rule := parse_rule(str(rule_entry['Job Income']).strip()):
+          self._rules_job[year] = rule
+      if 'Other Income' in rule_entry:
+        if rule := parse_rule(str(rule_entry['Other Income']).strip()):
+          self._rules_other[year] = rule
 
   @cache
   def get(self, year: int, retired: bool = False) -> float:
@@ -46,70 +52,18 @@ class Income:
       year: The year to get income for.
       retired: If True, only return other income (no job income).
     """
-    if year in self._historical_other:
-      other_income = self._historical_other[year]
-    elif self._last_historical_year and year > self._last_historical_year:
-      other_income = self._project_other_income(year)
-    else:
-      other_income = 0.0
-
+    other_income = self._project_other_income(year)
     if retired:
       return other_income
-
-    if year in self._historical_job:
-      return self._historical_job[year] + other_income
-    if self._last_historical_year and year > self._last_historical_year:
-      return self._project_job_income(year) + other_income
-    return other_income
-
-  def _load_csv(self, path: str) -> None:
-    """Load historical income data from a CSV file.
-
-    Values in the Job Income and Other Income columns are interpreted as rules if they parse as
-    one (e.g. '+3%', '=120000'), or as fixed historical amounts otherwise. A row advances
-    _last_historical_year only if it contains at least one fixed amount.
-
-    Expected format:
-      Year,Job Income,Other Income
-      2025,120000,0
-      2026,+3%,
-      2030,=0,
-    """
-    with open(path, 'r') as f:
-      reader = csv.DictReader(f)
-      for row in reader:
-        year = int(row['Year'])
-
-        job_value = row['Job Income'].strip()
-        other_value = row['Other Income'].strip()
-
-        has_data = False
-
-        if job_value:
-          if job_rule := parse_rule(year, job_value):
-            self._rules_job[year] = job_rule
-          else:
-            self._historical_job[year] = float(job_value)
-            has_data = True
-
-        if other_value:
-          if other_rule := parse_rule(year, other_value):
-            self._rules_other[year] = other_rule
-          else:
-            self._historical_other[year] = float(other_value)
-            has_data = True
-
-        if has_data and (not self._last_historical_year or year > self._last_historical_year):
-          self._last_historical_year = year
+    return self._project_job_income(year) + other_income
 
   def _project_job_income(self, year: int) -> float:
-    """Returns the projected job income for the given future year."""
-    if not self._last_historical_year:
-      return 0.0
+    """Returns the projected job income for the given year."""
+    if year <= self.base_year:
+      return self._job_income
 
-    amount = self._historical_job.get(self._last_historical_year, 0.0)
-
-    for i in range(self._last_historical_year + 1, year + 1):
+    amount = self._job_income
+    for i in range(self.base_year + 1, year + 1):
       rule = self._rules_job.get(i)
       if rule:
         amount = rule.apply(amount)
@@ -121,18 +75,17 @@ class Income:
     return amount
 
   def _project_other_income(self, year: int) -> float:
-    """Returns the projected other income for the given future year.
+    """Returns the projected other income for the given year.
 
     Unlike job income, other income has no default growth rate: if no rule is set for a given year,
     the amount remains unchanged. Rules that allow growth (rule.apply_growth=True) will still only
     apply the rule itself — there is no default rate to compound on top of it.
     """
-    if not self._last_historical_year:
-      return 0.0
+    if year <= self.base_year:
+      return self._other_income
 
-    amount = self._historical_other.get(self._last_historical_year, 0.0)
-
-    for i in range(self._last_historical_year + 1, year + 1):
+    amount = self._other_income
+    for i in range(self.base_year + 1, year + 1):
       rule = self._rules_other.get(i)
       if rule:
         amount = rule.apply(amount)

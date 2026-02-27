@@ -1,8 +1,6 @@
-"""Budget tracking by category, with historical data and forward projection."""
+"""Budget tracking by category, with a base-year snapshot and forward projection."""
 
 from __future__ import annotations
-
-import csv
 
 from collections import defaultdict
 from enum import Enum
@@ -10,10 +8,6 @@ from functools import cache, cached_property
 
 from assets import AssetCategory
 from rules import Rule, parse_rule
-
-
-# CSV columns that are always ignored during parsing (e.g. human-readable notes).
-_IGNORED_COLUMNS = {'Year', 'Notes'}
 
 
 class BudgetCategory(Enum):
@@ -105,77 +99,151 @@ class BudgetCategory(Enum):
     }
 
 
-class Budget:
-  """Budget tracking with historical data and projection rules.
+def _parse_budget_category(name: str) -> BudgetCategory:
+  """Parse a budget category by enum member name or display name.
 
-  Supports multiple budget categories with different inflation rates and custom projection rules for
-  each category.
+  Tries the enum member name first (e.g. 'PRE_TAX_401K'), then the display name
+  (e.g. 'Pre-Tax 401K').
+
+  Raises:
+    ValueError: If the name doesn't match any budget category.
+  """
+  try:
+    return BudgetCategory[name.upper()]
+  except KeyError:
+    return BudgetCategory.from_name(name)
+
+
+def _parse_fraction(value) -> float:
+  """Parse a fraction value from a percentage string (e.g. '100%') or a plain number."""
+  value_str = str(value).strip()
+  if value_str.endswith('%'):
+    return float(value_str[:-1]) / 100.0
+  return float(value_str)
+
+
+class Budget:
+  """Budget tracking with a base-year snapshot and forward projection rules.
+
+  Supports multiple budget categories with different inflation rates and custom projection rules
+  for each category.
   """
 
-  def __init__(self, path: str, inflation: dict[str, float] | None = None):
-    """Initialize and load historical budget data from a CSV file.
+  def __init__(self, base_year: int, data: dict):
+    """Initialize from a scenario TOML [budget] data dict.
 
     Args:
-      path: Path to the CSV file containing historical budget data.
-      inflation: Optional per-category inflation rate overrides, keyed by enum member name
-          (e.g. 'housing') with values as fractions (e.g. 0.05 for 5%). Overrides the default
-          inflation rate on the BudgetCategory enum when projecting future years.
+      base_year: The snapshot year for the base amounts.
+      data: Dict from the [budget] TOML section. Top-level keys are budget category names
+          (either enum member names or display names), with numeric or string values. Reserved
+          keys 'rules' and 'growth' are handled separately. Special keys:
+            '529 Eligible': fraction of the School budget payable from a 529 plan, as a
+                percentage string (e.g. '100%') or plain number (e.g. 1.0).
+            'Employer 401K Match': either a plain percentage of the pre-tax 401K contribution
+                (e.g. '50%'), a rule string (e.g. '=60000'), or a plain dollar amount.
+            'growth': sub-dict of per-category inflation rate overrides, where values are
+                percentages (e.g. 3 for 3%).
+            'rules': list of per-year rule dicts.
 
     Raises:
-      ValueError: If any key in inflation does not match a known BudgetCategory name.
+      ValueError: If any key does not match a known BudgetCategory.
     """
-    # Historical data: {year: {category: amount}}
-    self._historical: dict[int, dict[BudgetCategory, float]] = {}
+    self.base_year = base_year
 
-    # Latest year with historical data
-    self._last_historical_year: int | None = None
+    # Base-year amounts by category.
+    self._amounts: dict[BudgetCategory, float] = {}
 
-    # Rules mapping from (category, year) to rule
+    # Rules mapping from (category, year) to rule.
     self._rules: defaultdict[BudgetCategory, dict[int, Rule]] = defaultdict(dict)
 
     # Fraction of the School budget eligible to be paid from a 529 plan, by year.
-    # Unlike historical data, entries here do not advance _last_historical_year.
     self._529_eligible: dict[int, float] = {}
 
     # Employer 401K match as a fraction of the employee's pre-tax 401K contribution, by year.
-    # Only populated when the 'Employer 401K Match' column has a plain percentage (e.g. '50%').
+    # Only populated when the 'Employer 401K Match' value is a plain percentage (e.g. '50%').
     # Fixed dollar amounts use the EMPLOYER_401K_MATCH budget category instead.
     self._employer_match_fraction: dict[int, float] = {}
 
     # Per-category inflation rate overrides (fraction, e.g. 0.05 for 5%).
     self._inflation: dict[BudgetCategory, float] = {}
 
-    if inflation:
-      for key, value in inflation.items():
-        try:
-          category = BudgetCategory[key.upper()]
-        except KeyError:
-          raise ValueError(f'Unknown budget category in inflation overrides: "{key}"')
-        self._inflation[category] = value
+    for key, value in data.items():
+      if key in ('rules', 'growth'):
+        continue
+      if key in ('529 Eligible', '529_eligible'):
+        self._529_eligible[base_year] = _parse_fraction(value)
+      elif key in ('Employer 401K Match', 'employer_401k_match'):
+        self._load_employer_match(base_year, value, update_amounts=True)
+      else:
+        self._amounts[_parse_budget_category(key)] = float(value)
 
-    self._load_csv(path)
+    for key, value in data.get('growth', {}).items():
+      self._inflation[_parse_budget_category(key)] = float(value) / 100.0
+
+    for rule_entry in data.get('rules', []):
+      year = int(rule_entry['year'])
+      for key, value in rule_entry.items():
+        if key == 'year':
+          continue
+        if key in ('529 Eligible', '529_eligible'):
+          self._529_eligible[year] = _parse_fraction(value)
+        elif key in ('Employer 401K Match', 'employer_401k_match'):
+          self._load_employer_match(year, value, update_amounts=False)
+        else:
+          category = _parse_budget_category(key)
+          # Bare numbers in a rule entry are treated as SetAmount.
+          value_str = f'={value}' if not isinstance(value, str) else str(value).strip()
+          if rule := parse_rule(value_str):
+            self._rules[category][year] = rule
+
+  def _load_employer_match(self, year: int, value, update_amounts: bool) -> None:
+    """Parse and store an Employer 401K Match value for the given year.
+
+    A plain percentage (e.g. '50%') is stored as a fraction in _employer_match_fraction. When
+    update_amounts is True (base-year data), also zeroes out the dollar amount in _amounts to
+    prevent double-counting. A rule string or plain number sets the dollar-amount side and
+    zeroes out the fraction.
+
+    Args:
+      year: The year to associate the match with.
+      value: The raw TOML value (str or number).
+      update_amounts: If True, also update _amounts (base-year context only).
+    """
+    value_str = str(value).strip()
+    if (isinstance(value, str)
+        and value_str.endswith('%')
+        and not value_str.startswith(('+', '-', '='))):
+      # Plain percentage (e.g. '50%'): a fraction of the employee's pre-tax 401K contribution.
+      self._employer_match_fraction[year] = float(value_str[:-1]) / 100.0
+      if update_amounts:
+        self._amounts[BudgetCategory.EMPLOYER_401K_MATCH] = 0.0
+    elif isinstance(value, str) and (rule := parse_rule(value_str)):
+      # Rule string (e.g. '=60000', '+5%'): sets the dollar-amount side.
+      self._employer_match_fraction[year] = 0.0
+      self._rules[BudgetCategory.EMPLOYER_401K_MATCH][year] = rule
+    else:
+      # Plain number: fixed dollar match.
+      self._employer_match_fraction[year] = 0.0
+      if update_amounts:
+        self._amounts[BudgetCategory.EMPLOYER_401K_MATCH] = float(value)
+      else:
+        # In a rule entry, a plain number is treated as SetAmount.
+        if rule := parse_rule(f'={value_str}'):
+          self._rules[BudgetCategory.EMPLOYER_401K_MATCH][year] = rule
 
   @cache
   def get_category(self, category: BudgetCategory, year: int) -> float:
     """Returns the amount for a category in a given year, defaulting to zero."""
-    if year in self._historical and category in self._historical[year]:
-      return self._historical[year][category]
-    if self._last_historical_year and year > self._last_historical_year:
+    if year == self.base_year:
+      return self._amounts.get(category, 0.0)
+    if year > self.base_year:
       return self._project_category(category, year)
     return 0.0
 
   @cache
   def get_total(self, year: int) -> float:
     """Returns the total budget across all categories for a specific year."""
-    if year in self._historical:
-      categories = self._historical[year].keys()
-    elif self._last_historical_year and year > self._last_historical_year:
-      # For future years, use categories from the last historical year.
-      categories = self._historical.get(self._last_historical_year, {}).keys()
-    else:
-      return 0.0
-
-    return sum(self.get_category(category, year) for category in categories)
+    return sum(self.get_category(category, year) for category in self._amounts)
 
   @cache
   def get_529_eligible_fraction(self, year: int) -> float:
@@ -190,11 +258,7 @@ class Budget:
     Returns:
       A value between 0.0 and 1.0.
     """
-    fraction = 0.0
-    for entry_year, entry_fraction in self._529_eligible.items():
-      if entry_year <= year:
-        fraction = entry_fraction
-    return fraction
+    return Budget._step_function_lookup(self._529_eligible, year)
 
   @cache
   def get_employer_match_fraction(self, year: int) -> float:
@@ -210,78 +274,20 @@ class Budget:
     Returns:
       A value >= 0.0 (e.g. 0.5 for a 50% match).
     """
-    fraction = 0.0
-    for entry_year, entry_fraction in self._employer_match_fraction.items():
-      if entry_year <= year:
-        fraction = entry_fraction
-    return fraction
+    return Budget._step_function_lookup(self._employer_match_fraction, year)
 
-  def _load_csv(self, path: str) -> None:
-    """Load historical budget data from the given CSV file path.
-
-    Each non-Year column names a budget category, except for the special '529 Eligible' column.
-    Values are interpreted as rules if they parse as one (e.g. '+3%', '=20000'), or as fixed
-    historical amounts otherwise. A row advances _last_historical_year only if it contains at
-    least one fixed amount.
-
-    Expected format:
-      Year,Housing,Health,529 Eligible,...
-      2025,30000,8000,
-      2030,,,-10%
-      2033,,,100%
-    """
-    with open(path, 'r') as f:
-      reader = csv.DictReader(f)
-      for row in reader:
-        year = int(row['Year'])
-        year_data = {}
-
-        for col_name, value in row.items():
-          if col_name in _IGNORED_COLUMNS:
-            continue
-
-          value = value.strip()
-          if not value:
-            continue
-
-          if col_name == '529 Eligible':
-            # Fraction of the School budget payable from a 529 plan.
-            # Does not count as historical data; does not advance _last_historical_year.
-            fraction = float(value[:-1]) / 100.0 if value.endswith('%') else float(value)
-            self._529_eligible[year] = fraction
-          elif col_name == 'Employer 401K Match':
-            # To prevent double-counting when switching between types, each form zeroes out the
-            # other for that year: a percentage stores 0.0 as a historical dollar amount, and a
-            # dollar amount/rule records 0.0 in _employer_match_fraction.
-            if value.endswith('%') and not value.startswith(('+', '-', '=')):
-              # Plain percentage (e.g. '50%'): a fraction of the employee's pre-tax 401K
-              # contribution. Checked before parse_rule because parse_rule also matches
-              # bare percentages as AdjustByPercentage rules.
-              fraction = float(value[:-1]) / 100.0
-              self._employer_match_fraction[year] = fraction
-              year_data[BudgetCategory.EMPLOYER_401K_MATCH] = 0.0
-            elif rule := parse_rule(year, value):
-              self._employer_match_fraction[year] = 0.0
-              self._rules[BudgetCategory.EMPLOYER_401K_MATCH][year] = rule
-            else:
-              self._employer_match_fraction[year] = 0.0
-              year_data[BudgetCategory.EMPLOYER_401K_MATCH] = float(value)
-          else:
-            category = BudgetCategory.from_name(col_name)
-            if rule := parse_rule(year, value):
-              self._rules[category][year] = rule
-            else:
-              year_data[category] = float(value)
-
-        if year_data:
-          self._historical[year] = year_data
-          if not self._last_historical_year or year > self._last_historical_year:
-            self._last_historical_year = year
+  @staticmethod
+  def _step_function_lookup(data: dict[int, float], year: int) -> float:
+    """Returns the value for the largest key in data that is still <= year, or 0.0."""
+    eligible_years = [y for y in data if y <= year]
+    if not eligible_years:
+      return 0.0
+    return data[max(eligible_years)]
 
   def _project_category(self, category: BudgetCategory, year: int) -> float:
     """Returns the projected budget for a category in a future year.
 
-    Applies rules in order from the last historical year to the target year. Default inflation is
+    Applies rules in order from the base year to the target year. Default inflation is
     always applied unless a rule explicitly suppresses it (rule.apply_growth=False).
 
     Args:
@@ -291,17 +297,11 @@ class Budget:
     Returns:
       The projected budget amount for the category in the given year.
     """
-    if not self._last_historical_year:
-      return 0.0
-
-    amount = self._historical.get(self._last_historical_year, {}).get(category, 0.0)
+    amount = self._amounts.get(category, 0.0)
     category_rules = self._rules.get(category, {})
     inflation = self._inflation.get(category, category.inflation)
 
-    # Project year by year, applying rules and/or default inflation.
-    # If a rule exists, apply it; then apply inflation unless the rule suppresses it.
-    # If no rule exists, apply inflation unconditionally.
-    for i in range(self._last_historical_year + 1, year + 1):
+    for i in range(self.base_year + 1, year + 1):
       rule = category_rules.get(i)
       if rule:
         amount = rule.apply(amount)

@@ -15,8 +15,6 @@ federal rates for ordinary income calculations.
 
 import csv
 
-from util import DataPaths
-
 
 # Annual growth rate applied to inflation-adjusted bracket thresholds when projecting to
 # future years. Based on the historical average IRS inflation adjustment over the past two
@@ -37,26 +35,34 @@ class Tax:
   remains federal-only.
   """
 
-  def __init__(self, paths: DataPaths, data_year: int):
+  def __init__(
+    self,
+    income_tax_path: str,
+    capital_gains_tax_path: str,
+    state_income_tax_path: str | None = None,
+    *,
+    data_year: int
+  ):
     """Initialize and load tax bracket data.
 
     Args:
-      paths: Resolved data file paths. Uses income_tax, capital_gains_tax, and
-          state_income_tax (if set).
+      income_tax_path: Path to the federal income tax CSV file.
+      capital_gains_tax_path: Path to the capital gains tax CSV file.
+      state_income_tax_path: Path to the state income tax CSV file, or None.
       data_year: The tax year of the data in the CSV files.
     """
     self.data_year = data_year
 
     # List of (income_threshold, rate) tuples, sorted ascending by threshold.
-    self._income_brackets: list[tuple[float, float]] = self._load_bracket_list(paths.income_tax)
+    self._income_brackets: list[tuple[float, float]] = self._load_bracket_list(income_tax_path)
 
     # List of (income_threshold, rate, inflation_adjusted) tuples, sorted ascending.
     self._cg_brackets: list[tuple[float, float, bool]] = self._load_capital_gains_csv(
-        paths.capital_gains_tax)
+        capital_gains_tax_path)
 
     # State income brackets as (threshold, rate) tuples, or empty if no state is loaded.
     self._state_income_brackets: list[tuple[float, float]] = (
-      self._load_bracket_list(paths.state_income_tax) if paths.state_income_tax else []
+      self._load_bracket_list(state_income_tax_path) if state_income_tax_path else []
     )
 
   def calculate(self, amount: float, year: int, capital_gains: bool = False) -> float:

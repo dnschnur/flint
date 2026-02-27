@@ -1,0 +1,20 @@
+country = "us"
+state = "ca"
+
+year = 2025
+
+[assets]
+"Cash" = 100000
+"401K" = 1000000
+"Roth IRA" = 200000
+"Stocks" = 700000
+
+[budget]
+"Housing" = 50000
+"Health" = 8000
+"Food" = 40000
+"Pre-Tax 401K" = 20000
+
+[income]
+"Job Income" = 200000
+"Other Income" = 0
