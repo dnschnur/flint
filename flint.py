@@ -92,14 +92,6 @@ def main():
     help='Scenario name: reads from scenarios/<name>.toml (default: "default")'
   )
   parser.add_argument(
-    '--state',
-    type=str,
-    default=None,
-    metavar='CODE',
-    help='State income tax: two-letter state code (e.g. ca). Overrides the state set in the '
-         'scenario file.'
-  )
-  parser.add_argument(
     '--sp500-start',
     type=int,
     default=None,
@@ -133,7 +125,7 @@ def main():
   base_year = scenario.get('year', 2025)
 
   country = scenario.get('country', 'us')
-  state = args.state or scenario.get('state')
+  state = scenario.get('state')
   if state:
     state = state.lower()
 
