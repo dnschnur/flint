@@ -453,6 +453,10 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
         path += prevPresent ? `L${x} ${y} ` : `M${x} ${y} `;
         prevPresent = true;
       } else {
+        if (prevPresent) {
+          const x = xScale(snapshot.year).toFixed(1);
+          path += `L${x} ${yScale(0).toFixed(1)} `;
+        }
         prevPresent = false;
       }
     }
