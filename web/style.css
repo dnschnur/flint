@@ -206,6 +206,121 @@ h2 {
   margin-top: 3px;
 }
 
+/* ── Detail view header ──────────────────────────────── */
+
+.detail-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+#back-button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 5px 2px;
+  transition: color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#back-button::before {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-left: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+#back-button:hover {
+  color: var(--accent);
+}
+
+#detail-nav-info {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* ── Detail view chart ───────────────────────────────── */
+
+.chart-card {
+  width: 100%;
+  overflow: hidden;
+}
+
+#line-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ── Detail view assets table ────────────────────────── */
+
+.detail-table-panel {
+  margin-top: 16px;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-table th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  padding-bottom: 10px;
+  text-align: left;
+}
+
+.detail-table th.num,
+.detail-table td.num {
+  text-align: right;
+}
+
+.detail-table td {
+  padding: 5px 0;
+  border-top: 1px solid rgba(48, 54, 61, 0.5);
+}
+
+.detail-table tfoot td {
+  border-top: 1px solid rgba(48, 54, 61, 0.9);
+  padding-top: 8px;
+  font-weight: 600;
+}
+
+.asset-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-table-historical-year {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.asset-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
 /* ── Tooltip ─────────────────────────────────────────── */
 
 #tooltip {

@@ -8,7 +8,7 @@ The simulation runs in two phases:
 import csv
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from assets import Assets, AssetCategory
 from budget import Budget, BudgetCategory
@@ -26,9 +26,12 @@ class SimulationResult:
   Attributes:
     start_year: The first year of the historical S&P 500 period used.
     assets: Final asset values by category at the end of retirement.
+    history: Per-year snapshots of asset balances at the start of each
+      retirement year, from start_year through end_year (inclusive).
   """
   start_year: int
   assets: defaultdict[AssetCategory, float]
+  history: list[dict] = field(default_factory=list)
 
 
 class Simulation:
@@ -163,9 +166,9 @@ class Simulation:
     for historical_start_year in range(self.simulation_min_year, max_historical_start + 1):
       historical_end_year = historical_start_year + simulation_length
       if historical_end_year in self._sp500_data:
-        assets = self._run_single_simulation(
+        assets, history = self._run_single_simulation(
             pre_retirement_assets, start_year, end_year, historical_start_year)
-        yield SimulationResult(start_year=historical_start_year, assets=assets)
+        yield SimulationResult(start_year=historical_start_year, assets=assets, history=history)
 
   def _get_sp500_return(self, start_year: int, end_year: int) -> float:
     """Returns the S&P 500 return between two years.
@@ -214,7 +217,7 @@ class Simulation:
     start_year: int,
     end_year: int,
     historical_start_year: int
-  ) -> defaultdict[AssetCategory, float]:
+  ) -> tuple[defaultdict[AssetCategory, float], list[dict]]:
     """Run a single simulation using a specific historical period.
 
     Args:
@@ -224,14 +227,27 @@ class Simulation:
       historical_start_year: Starting year for historical S&P 500 data.
 
     Returns:
-      Dict mapping AssetCategory to final asset values.
+      Tuple of (assets, history), where assets contains final values for each asset category, and
+      history is a list of per-year snapshots, one per year from start_year to end_year, each
+      capturing asset balances at the start of that year (before the strategy is applied).
     """
+    history = []
     current_assets = defaultdict(float, starting_assets)
     current_historical_year = historical_start_year
     retirement_length = end_year - start_year
 
     for year in range(start_year, end_year + 1):
       age = self.current_age + (year - self.data_year)
+
+      # Capture start-of-year snapshot before strategy withdrawals are applied.
+      history.append({
+        'year': year,
+        'assets': {
+          category.display_name: round(value)
+          for category, value in current_assets.items()
+          if value
+        },
+      })
 
       # Capital gains fraction ramps linearly from 0 at retirement start to 1 at the end.
       # This models the idea that assets held longer into retirement have a higher proportion
@@ -260,4 +276,4 @@ class Simulation:
         current_assets = new_assets
         current_historical_year = next_historical_year
 
-    return current_assets
+    return current_assets, history

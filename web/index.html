@@ -14,42 +14,79 @@
   </header>
 
   <main>
-    <section class="stats-grid">
-      <div class="stat-card panel">
-        <div class="stat-label">Starting Portfolio</div>
-        <div class="stat-value" id="starting-value">&mdash;</div>
-      </div>
-      <div class="stat-card panel">
-        <div class="stat-label">Simulations Run</div>
-        <div class="stat-value" id="simulations-value">&mdash;</div>
-        <div class="stat-sub" id="age-range">&mdash;</div>
-      </div>
-      <div class="stat-card panel">
-        <div class="stat-label">Median Outcome</div>
-        <div class="stat-value" id="median-value">&mdash;</div>
-        <div class="stat-sub" id="median-change">&mdash;</div>
-      </div>
-      <div class="stat-card panel">
-        <div class="stat-label">Success Rate</div>
-        <div class="stat-value" id="success-value">&mdash;</div>
-        <div class="stat-sub">Ended with positive assets</div>
-      </div>
-    </section>
 
-    <section class="panel">
-      <div class="panel-header">
-        <h2>Outcome Distribution</h2>
-        <span class="panel-hint">Click a bar for simulation details</span>
-      </div>
-      <div class="histogram-card">
-        <svg id="histogram" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
-      </div>
-    </section>
+    <div id="view-overview">
+      <section class="stats-grid">
+        <div class="stat-card panel">
+          <div class="stat-label">Starting Portfolio</div>
+          <div class="stat-value" id="starting-value">&mdash;</div>
+        </div>
+        <div class="stat-card panel">
+          <div class="stat-label">Simulations Run</div>
+          <div class="stat-value" id="simulations-value">&mdash;</div>
+          <div class="stat-sub" id="age-range">&mdash;</div>
+        </div>
+        <div class="stat-card panel">
+          <div class="stat-label">Median Outcome</div>
+          <div class="stat-value" id="median-value">&mdash;</div>
+          <div class="stat-sub" id="median-change">&mdash;</div>
+        </div>
+        <div class="stat-card panel">
+          <div class="stat-label">Success Rate</div>
+          <div class="stat-value" id="success-value">&mdash;</div>
+          <div class="stat-sub">Ended with positive assets</div>
+        </div>
+      </section>
 
-    <section class="panel" id="bin-detail" hidden>
-      <h2 id="bin-detail-title"></h2>
-      <div id="bin-detail-grid"></div>
-    </section>
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Outcome Distribution</h2>
+          <span class="panel-hint">Click a bar for simulation details</span>
+        </div>
+        <div class="histogram-card">
+          <svg id="histogram" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
+      </section>
+
+      <section class="panel" id="bin-detail" hidden>
+        <h2 id="bin-detail-title"></h2>
+        <div id="bin-detail-grid"></div>
+      </section>
+    </div>
+
+    <div id="view-detail" hidden>
+      <div class="detail-nav">
+        <button id="back-button">Overview</button>
+        <div id="detail-nav-info"></div>
+      </div>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Asset Performance</h2>
+          <span class="panel-hint">Hover to explore &middot; click to lock</span>
+        </div>
+        <div class="chart-card">
+          <svg id="line-chart" viewBox="0 0 900 360" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
+      </section>
+
+      <section class="panel detail-table-panel">
+        <div class="panel-header">
+          <h2 id="detail-table-title">&mdash;</h2>
+        </div>
+        <table class="detail-table">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th class="num">Value</th>
+              <th class="num">Share</th>
+            </tr>
+          </thead>
+          <tbody id="detail-table-body"></tbody>
+          <tfoot id="detail-table-footer"></tfoot>
+        </table>
+      </section>
+    </div>
 
   </main>
 
