@@ -9,6 +9,9 @@ import os
 import statistics
 import tomllib
 
+import banner
+import server
+
 from assets import Assets, AssetCategory
 from budget import Budget
 from income import Income
@@ -109,6 +112,12 @@ def main():
     help='Maximum year for S&P 500 historical data (default: latest available)'
   )
   parser.add_argument(
+    '--port',
+    type=int,
+    default=8080,
+    help='Port for the results web server (default: 8080)'
+  )
+  parser.add_argument(
     '--verbose',
     action='store_true',
     help='Print asset breakdown for each pre-retirement year'
@@ -193,6 +202,26 @@ def main():
   print_min_scenario_table(min_result, args.end_year, args.start_year)
   print_median_scenario_table(median_result, args.end_year, args.start_year)
   print_outcome_table(len(results), starting_total, totals)
+
+  server_data = {
+    'retirement': {
+      'start_year': args.start_year,
+      'end_year': args.end_year,
+      'retirement_age': retirement_age,
+      'end_age': end_age,
+    },
+    'starting_total': starting_total,
+    'stats': {
+      'min': min_total,
+      'max': max_total,
+      'median': median_total,
+    },
+    'simulations': len(results),
+    'totals': totals,
+  }
+
+  banner.print_banner(args.port)
+  server.serve(server_data, port=args.port)
 
 
 if __name__ == '__main__':

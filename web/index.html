@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flint — Retirement Simulator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>Flint</h1>
+    </div>
+  </header>
+
+  <main>
+    <section class="stats-grid">
+      <div class="stat-card panel">
+        <div class="stat-label">Starting Portfolio</div>
+        <div class="stat-value" id="starting-value">&mdash;</div>
+      </div>
+      <div class="stat-card panel">
+        <div class="stat-label">Simulations Run</div>
+        <div class="stat-value" id="simulations-value">&mdash;</div>
+        <div class="stat-sub" id="age-range">&mdash;</div>
+      </div>
+      <div class="stat-card panel">
+        <div class="stat-label">Median Outcome</div>
+        <div class="stat-value" id="median-value">&mdash;</div>
+        <div class="stat-sub" id="median-change">&mdash;</div>
+      </div>
+      <div class="stat-card panel">
+        <div class="stat-label">Success Rate</div>
+        <div class="stat-value" id="success-value">&mdash;</div>
+        <div class="stat-sub">Ended with positive assets</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Outcome Distribution</h2>
+      <div class="histogram-card">
+        <svg id="histogram" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <p>&copy; 2026 David Schnur</p>
+    </div>
+  </footer>
+
+  <div id="tooltip"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
