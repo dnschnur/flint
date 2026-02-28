@@ -15,7 +15,6 @@ import server
 from assets import Assets, AssetCategory
 from budget import Budget
 from income import Income
-from output import print_assets_table, print_median_scenario_table, print_min_scenario_table, print_outcome_table, print_stats_table
 from rmd import RMD
 from simulation import Simulation
 from tax import Tax
@@ -109,12 +108,6 @@ def main():
     default=8080,
     help='Port for the results web server (default: 8080)'
   )
-  parser.add_argument(
-    '--verbose',
-    action='store_true',
-    help='Print asset breakdown for each pre-retirement year'
-  )
-
   args = parser.parse_args()
 
   try:
@@ -154,10 +147,7 @@ def main():
   )
 
   starting_assets = None
-  for year, assets_snapshot in sim.project_pre_retirement(args.start_year):
-    if args.verbose:
-      age = args.age + (year + 1 - base_year)
-      print_assets_table(f'Pre-Retirement: Year {year + 1} (Age {age})', assets_snapshot)
+  for _, assets_snapshot in sim.project_pre_retirement(args.start_year):
     starting_assets = assets_snapshot
   starting_total = sum(starting_assets.values())
 
@@ -175,25 +165,7 @@ def main():
 
   totals = [sum(result.assets.values()) for result in results]
 
-  min_total = min(totals)
-  max_total = max(totals)
   median_total = statistics.median(totals)
-
-  # Find the minimum and median simulation results
-  sorted_indices = sorted(range(len(totals)), key=lambda i: totals[i])
-  min_result = results[sorted_indices[0]]
-  median_result = results[sorted_indices[len(totals) // 2]]
-
-  print('=' * 60)
-  print(f'Retirement: Age {retirement_age} (year {args.start_year}) to age {end_age} (year {args.end_year})')
-  print(f'Simulations run: {len(results)}')
-  print()
-
-  print_assets_table(f'Starting Assets in {args.start_year}', starting_assets)
-  print_stats_table(min_total, max_total, median_total)
-  print_min_scenario_table(min_result, args.end_year, args.start_year)
-  print_median_scenario_table(median_result, args.end_year, args.start_year)
-  print_outcome_table(len(results), starting_total, totals)
 
   server_data = {
     'retirement': {
@@ -204,8 +176,8 @@ def main():
     },
     'starting_total': starting_total,
     'stats': {
-      'min': min_total,
-      'max': max_total,
+      'min': min(totals),
+      'max': max(totals),
       'median': median_total,
     },
     'results': [
