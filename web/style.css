@@ -7,6 +7,8 @@
   --accent:     #58a6ff;
   --positive:   #3fb950;
   --negative:   #f85149;
+  --accent-40:  #58a6ff66;
+  --border-50:  #30363d80;
 }
 
 *, *::before, *::after {
@@ -38,7 +40,7 @@ header, footer {
 /* ── Header ─────────────────────────────────────────── */
 
 header {
-  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+  border-bottom: 1px solid var(--border-50);
   padding: 20px 0;
 }
 
@@ -54,12 +56,6 @@ h1 {
   letter-spacing: -0.5px;
   padding-left: 10px;
   color: var(--accent);
-}
-
-.subtitle {
-  color: var(--muted);
-  margin-top: 3px;
-  font-size: 14px;
 }
 
 /* ── Main layout ─────────────────────────────────────── */
@@ -116,7 +112,7 @@ main {
 
 #starting-card:hover,
 #median-card:hover {
-  border-color: rgba(88, 166, 255, 0.4);
+  border-color: var(--accent-40);
 }
 
 /* ── Controls bar ────────────────────────────────────── */
@@ -188,7 +184,6 @@ main {
 h2 {
   font-size: 15px;
   font-weight: 600;
-  color: var(--text);
   margin-bottom: 18px;
 }
 
@@ -212,12 +207,14 @@ h2 {
 
 /* ── Histogram ───────────────────────────────────────── */
 
-.histogram-card {
+.histogram-card,
+.chart-card {
   width: 100%;
   overflow: hidden;
 }
 
-#histogram {
+#histogram,
+#line-chart {
   display: block;
   width: 100%;
   height: auto;
@@ -247,7 +244,7 @@ h2 {
 }
 
 .sim-card:hover {
-  border-color: rgba(88, 166, 255, 0.4);
+  border-color: var(--accent-40);
 }
 
 .sim-card-period {
@@ -316,19 +313,6 @@ h2 {
   color: var(--muted);
 }
 
-/* ── Detail view chart ───────────────────────────────── */
-
-.chart-card {
-  width: 100%;
-  overflow: hidden;
-}
-
-#line-chart {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
 /* ── Detail view assets table ────────────────────────── */
 
 .detail-table-panel {
@@ -359,7 +343,7 @@ h2 {
 
 .detail-table td {
   padding: 5px 0;
-  border-top: 1px solid rgba(48, 54, 61, 0.5);
+  border-top: 1px solid var(--border-50);
 }
 
 .detail-table tfoot td {
@@ -393,7 +377,7 @@ h2 {
   background: rgba(22, 27, 34, 0.82);
   backdrop-filter: blur(12px) saturate(150%);
   -webkit-backdrop-filter: blur(12px) saturate(150%);
-  border: 1px solid rgba(48, 54, 61, 0.5);
+  border: 1px solid var(--border-50);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 13px;
@@ -412,7 +396,7 @@ h2 {
 /* ── Footer ──────────────────────────────────────────── */
 
 footer {
-  border-top: 1px solid rgba(48, 54, 61, 0.5);
+  border-top: 1px solid var(--border-50);
   padding: 16px 0;
   margin-top: 8px;
 }
