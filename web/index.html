@@ -16,6 +16,16 @@
   <main>
 
     <div id="view-overview">
+      <div class="controls-bar">
+        <div class="control-group">
+          <span class="control-label">Retire at age</span>
+          <input type="number" id="input-retirement-age" class="year-input">
+          <span class="control-label">until</span>
+          <input type="number" id="input-end-age" class="year-input">
+        </div>
+        <span class="run-error" id="run-error"></span>
+      </div>
+
       <section class="stats-grid">
         <div class="stat-card panel" id="starting-card">
           <div class="stat-label">Starting Portfolio</div>

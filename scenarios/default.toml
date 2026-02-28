@@ -2,7 +2,10 @@ country = "us"
 state = "ca"
 
 year = 2025
-age  = 45
+age = 45
+
+retirement_age = 65
+retirement_end = 90
 
 [assets]
 "Cash" = 100000

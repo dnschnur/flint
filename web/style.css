@@ -119,6 +119,60 @@ main {
   border-color: rgba(88, 166, 255, 0.4);
 }
 
+/* ── Controls bar ────────────────────────────────────── */
+
+.controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-left: 10px;
+  margin-bottom: 16px;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-label {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.year-input {
+  width: 56px;
+  background: rgba(13, 17, 23, 0.6);
+  border: 1px solid rgba(48, 54, 61, 0.7);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  padding: 5px 8px;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+  transition: border-color 0.15s;
+}
+
+.year-input::-webkit-outer-spin-button,
+.year-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.year-input:focus {
+  border-color: rgba(88, 166, 255, 0.6);
+}
+
+.run-error {
+  font-size: 12px;
+  color: var(--negative);
+}
+
 /* ── Panels ──────────────────────────────────────────── */
 
 .panel {

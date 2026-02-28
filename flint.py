@@ -12,6 +12,7 @@ import tomllib
 import banner
 import server
 
+from collections import defaultdict
 from assets import Assets, AssetCategory
 from budget import Budget
 from income import Income
@@ -68,16 +69,6 @@ def _resolve_tax_paths(country: str, state: str | None) -> tuple[str, str, str |
 def main():
   parser = argparse.ArgumentParser(
     description='Run retirement simulations using historical S&P 500 data'
-  )
-  parser.add_argument(
-    'start_year',
-    type=int,
-    help='Retirement year (when job income stops)'
-  )
-  parser.add_argument(
-    'end_year',
-    type=int,
-    help='Last year of retirement (inclusive)'
   )
   parser.add_argument(
     '--scenario',
@@ -145,58 +136,85 @@ def main():
     simulation_max_year=args.sp500_end
   )
 
-  starting_assets = None
-  pre_retirement_history = []
-  for year, assets_snapshot in sim.project_pre_retirement(args.start_year):
-    pre_retirement_history.append({
-      'year': year + 1,
-      'assets': {
-        category.display_name: round(value)
-        for category, value in assets_snapshot.items()
-        if value
+  default_retirement_age = scenario.get('retirement_age', age + 15)
+  default_end_age = scenario.get('retirement_end', age + 45)
+
+  default_start = base_year + (default_retirement_age - age)
+  default_end = base_year + (default_end_age - age)
+
+  def run_simulation(start_year: int, end_year: int) -> dict | None:
+    """Run a full simulation and return the server data dict, or None if no results."""
+    years_until_retirement = start_year - base_year
+    retirement_age = age + years_until_retirement
+
+    years_until_end = end_year - base_year
+    end_age = age + years_until_end
+
+    starting_assets = None
+    pre_retirement_history = []
+    for year, snapshot in sim.project_pre_retirement(start_year):
+      pre_retirement_history.append({
+        'year': year + 1,
+        'assets': {
+          category.display_name: round(value)
+          for category, value in snapshot.items()
+          if value
+        },
+      })
+      starting_assets = snapshot
+
+    if starting_assets is None:
+      current = defaultdict(float)
+      for category in AssetCategory:
+        value = sim.assets.get_category(category, base_year)
+        if value:
+          current[category] = value
+      starting_assets = current
+
+    starting_total = sum(starting_assets.values())
+
+    results = list(sim.run(start_year, end_year, starting_assets=starting_assets))
+
+    if not results:
+      return None
+
+    totals = [sum(result.assets.values()) for result in results]
+
+    median_total = statistics.median(totals)
+
+    return {
+      'retirement': {
+        'start_year': start_year,
+        'end_year': end_year,
+        'retirement_age': retirement_age,
+        'end_age': end_age,
       },
-    })
-    starting_assets = assets_snapshot
-  starting_total = sum(starting_assets.values())
+      'scenario': {
+        'base_year': base_year,
+        'age': age,
+        'default_retirement_age': default_retirement_age,
+        'default_end_age': default_end_age,
+      },
+      'starting_total': starting_total,
+      'pre_retirement_history': pre_retirement_history,
+      'stats': {
+        'min': min(totals),
+        'max': max(totals),
+        'median': median_total,
+      },
+      'results': [
+          {'start_year': result.start_year, 'total': totals[index], 'history': result.history}
+          for index, result in enumerate(results)
+      ],
+    }
 
-  results = list(sim.run(args.start_year, args.end_year, starting_assets=starting_assets))
-
-  if not results:
-    print('No simulation results generated. Check your date ranges.')
+  initial_data = run_simulation(default_start, default_end)
+  if initial_data is None:
+    print('No simulation results. Check retirement_start and retirement_end in your scenario.')
     return
 
-  years_until_retirement = args.start_year - base_year
-  retirement_age = age + years_until_retirement
-
-  years_until_end = args.end_year - base_year
-  end_age = age + years_until_end
-
-  totals = [sum(result.assets.values()) for result in results]
-
-  median_total = statistics.median(totals)
-
-  server_data = {
-    'retirement': {
-      'start_year': args.start_year,
-      'end_year': args.end_year,
-      'retirement_age': retirement_age,
-      'end_age': end_age,
-    },
-    'starting_total': starting_total,
-    'pre_retirement_history': pre_retirement_history,
-    'stats': {
-      'min': min(totals),
-      'max': max(totals),
-      'median': median_total,
-    },
-    'results': [
-        {'start_year': result.start_year, 'total': totals[index], 'history': result.history}
-        for index, result in enumerate(results)
-    ],
-  }
-
   banner.print_banner(args.port)
-  server.serve(server_data, port=args.port)
+  server.serve(initial_data, run_simulation, port=args.port)
 
 
 if __name__ == '__main__':

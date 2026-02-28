@@ -3,7 +3,9 @@
 import json
 import os
 
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 
 _WEB_ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web'))
 
@@ -14,24 +16,52 @@ _MIME_TYPES = {
 }
 
 
-def _make_handler(data: dict):
-  """Create an HTTP request handler class bound to simulation data."""
+def _make_handler(data: dict, simulate: Callable[[int, int], dict | None]):
+  """Create an HTTP request handler class bound to simulation data and a re-run callable.
+
+  Args:
+    data: Current simulation data dict, served at /data and updated when /simulate is called.
+    simulate: Callable that re-runs the simulation with a given start and end year.
+  """
 
   class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
       pass  # Suppress default request logging
 
+    def _send_json(self, body: dict, status: int = 200) -> None:
+      encoded = json.dumps(body).encode()
+      self.send_response(status)
+      self.send_header('Content-Type', 'application/json')
+      self.send_header('Content-Length', len(encoded))
+      self.end_headers()
+      self.wfile.write(encoded)
+
     def do_GET(self):
-      path = self.path.split('?')[0]
+      nonlocal data
+      parsed = urlparse(self.path)
+      path = parsed.path
 
       if path == '/data':
-        body = json.dumps(data).encode()
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', len(body))
-        self.end_headers()
-        self.wfile.write(body)
+        self._send_json(data)
+        return
+
+      if path == '/simulate':
+        params = parse_qs(parsed.query)
+        try:
+          start_year = int(params['start_year'][0])
+          end_year = int(params['end_year'][0])
+        except (KeyError, ValueError, IndexError):
+          self._send_json({'error': 'start_year and end_year are required integers'}, 400)
+          return
+
+        new_data = simulate(start_year, end_year)
+        if new_data is None:
+          self._send_json({'error': 'No simulation results. Check your date ranges.'}, 400)
+          return
+
+        data = new_data
+        self._send_json(data)
         return
 
       if path == '/':
@@ -62,14 +92,15 @@ def _make_handler(data: dict):
   return Handler
 
 
-def serve(data: dict, port: int = 8080):
+def serve(data: dict, simulate: Callable[[int, int], dict | None], port: int = 8080):
   """Starts the HTTP server and blocks until Ctrl-C.
 
   Args:
-    data: Simulation results dict to expose at /data.
+    data: Initial simulation results dict to expose at /data.
+    simulate: Callable that re-runs the simulation with a given start and end year.
     port: Port to listen on.
   """
-  handler = _make_handler(data)
+  handler = _make_handler(data, simulate)
   server = HTTPServer(('', port), handler)
   try:
     server.serve_forever()

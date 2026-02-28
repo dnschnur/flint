@@ -26,9 +26,11 @@ const CATEGORY_COLORS = {
 };
 
 // Global mutable state.
-let appData     = null;  // Full /data response
-let selectedBin = -1;    // Active histogram bar index
-let lockedYear  = null;  // Locked year in the detail chart, or null
+let appData          = null;   // Full /data response
+let selectedBin      = -1;     // Active histogram bar index
+let lockedYear       = null;   // Locked year in the detail chart, or null
+let isRunning        = false;  // True while a /simulate request is in flight
+let runDebounceTimer = null;   // Pending debounce timer ID
 
 /**
  * Format a dollar amount as a compact string, e.g. $1.23M, $456K, $789.
@@ -671,10 +673,10 @@ function updateDetailTable(snapshot, historicalYear) {
 }
 
 /**
- * Fetch simulation data from /data and populate the stat cards and histogram.
+ * Re-render the overview section (stat cards and histogram) from appData.
+ * Called on initial load and after each re-simulation.
  */
-async function init() {
-  appData = await fetch('/data').then(response => response.json());;
+function renderOverview() {
   const { retirement, starting_total, stats, results } = appData;
   const totals = results.map(result => result.total);
 
@@ -696,15 +698,86 @@ async function init() {
 
   document.getElementById('success-value').textContent = successRate.toFixed(1) + '%';
 
-  document.getElementById('starting-card').addEventListener('click', showPreRetirementView);
-
-  const sortedResults = [...results].sort((a, b) => a.total - b.total);
-  const medianResult = sortedResults[Math.floor(sortedResults.length / 2)];
-  document.getElementById('median-card')
-    .addEventListener('click', () => showDetailView(medianResult));
+  selectedBin = -1;
+  document.getElementById('bin-detail').hidden = true;
 
   const retirementLength = retirement.end_year - retirement.start_year;
   drawHistogram(totals, starting_total, stats.median, results, retirementLength);
+}
+
+/**
+ * Schedule a simulation run after a short debounce delay.
+ * Resets the timer on each call so rapid input changes only trigger one run.
+ */
+function scheduleRun() {
+  clearTimeout(runDebounceTimer);
+  runDebounceTimer = setTimeout(triggerRun, 600);
+}
+
+/**
+ * Read the age inputs, convert to years, and re-run the simulation via /simulate.
+ */
+async function triggerRun() {
+  if (isRunning) return;
+
+  const retirementAge = parseInt(document.getElementById('input-retirement-age').value, 10);
+  const endAge = parseInt(document.getElementById('input-end-age').value, 10);
+
+  const error = document.getElementById('run-error');
+
+  if (isNaN(retirementAge) || isNaN(endAge) || retirementAge >= endAge) {
+    error.textContent = 'Retirement age must be before end age.';
+    return;
+  }
+
+  error.textContent = '';
+
+  const { base_year, age } = appData.scenario;
+  const startYear = base_year + (retirementAge - age);
+  const endYear   = base_year + (endAge - age);
+
+  if (!document.getElementById('view-detail').hidden) {
+    hideDetailView();
+  }
+
+  isRunning = true;
+  try {
+    const response = await fetch(`/simulate?start_year=${startYear}&end_year=${endYear}`);
+    const data = await response.json();
+    if (!response.ok) {
+      error.textContent = data.error || 'Simulation failed.';
+      return;
+    }
+    appData = data;
+    renderOverview();
+  } catch {
+    error.textContent = 'Failed to connect to server.';
+  } finally {
+    isRunning = false;
+  }
+}
+
+/**
+ * Fetch simulation data from /data, set up controls, and render the initial overview.
+ */
+async function init() {
+  appData = await fetch('/data').then(response => response.json());
+
+  const startInput = document.getElementById('input-retirement-age');
+  startInput.value = appData.scenario.default_retirement_age;
+  startInput.addEventListener('input', scheduleRun);
+
+  const endInput = document.getElementById('input-end-age');
+  endInput.value = appData.scenario.default_end_age;
+  endInput.addEventListener('input', scheduleRun);
+
+  document.getElementById('starting-card').addEventListener('click', showPreRetirementView);
+  document.getElementById('median-card').addEventListener('click', () => {
+    const sorted = [...appData.results].sort((a, b) => a.total - b.total);
+    showDetailView(sorted[Math.floor(sorted.length / 2)]);
+  });
+
+  renderOverview();
 }
 
 window.addEventListener('load', init);
