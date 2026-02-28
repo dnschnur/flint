@@ -108,11 +108,13 @@ main {
 .positive { color: var(--positive); }
 .negative { color: var(--negative); }
 
+#starting-card,
 #median-card {
   cursor: pointer;
   transition: border-color 0.15s;
 }
 
+#starting-card:hover,
 #median-card:hover {
   border-color: rgba(88, 166, 255, 0.4);
 }

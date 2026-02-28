@@ -147,7 +147,16 @@ def main():
   )
 
   starting_assets = None
-  for _, assets_snapshot in sim.project_pre_retirement(args.start_year):
+  pre_retirement_history = []
+  for year, assets_snapshot in sim.project_pre_retirement(args.start_year):
+    pre_retirement_history.append({
+      'year': year + 1,
+      'assets': {
+        category.display_name: round(value)
+        for category, value in assets_snapshot.items()
+        if value
+      },
+    })
     starting_assets = assets_snapshot
   starting_total = sum(starting_assets.values())
 
@@ -175,6 +184,7 @@ def main():
       'end_age': end_age,
     },
     'starting_total': starting_total,
+    'pre_retirement_history': pre_retirement_history,
     'stats': {
       'min': min(totals),
       'max': max(totals),

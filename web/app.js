@@ -326,6 +326,30 @@ function showDetailView(result) {
 }
 
 /**
+ * Switch to the detail view showing the deterministic pre-retirement asset projection.
+ */
+function showPreRetirementView() {
+  const { retirement, starting_total, pre_retirement_history } = appData;
+  if (!pre_retirement_history.length) return;
+
+  const firstYear = pre_retirement_history[0].year;
+
+  document.getElementById('detail-nav-info').innerHTML =
+    `Pre-retirement &nbsp;&middot;&nbsp;` +
+    `<strong>${firstYear}&nbsp;&rarr;&nbsp;${retirement.start_year}</strong>` +
+    `&nbsp;&nbsp;&middot;&nbsp;&nbsp;${formatMoney(starting_total)}`;
+
+  document.getElementById('back-button').onclick = hideDetailView;
+
+  document.getElementById('view-overview').hidden = true;
+  document.getElementById('view-detail').hidden = false;
+  window.scrollTo({ top: 0, behavior: 'instant' });
+
+  drawLineChart(pre_retirement_history, firstYear, retirement.start_year, null);
+  updateDetailTable(pre_retirement_history[0], null);
+}
+
+/**
  * Return to the overview, restoring the histogram selection state.
  */
 function hideDetailView() {
@@ -502,7 +526,7 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
   // Cursor helpers
 
   function setLockedLine(year) {
-    if (year !== null) {
+    if (year != null) {
       const x = xScale(year);
       lockedLine.setAttribute('x1', x);
       lockedLine.setAttribute('x2', x);
@@ -552,7 +576,9 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
 
   // Mouse events
 
-  const historicalYear = year => historicalStartYear + (year - startYear);
+  const historicalYear = historicalStartYear != null
+    ? year => historicalStartYear + (year - startYear)
+    : () => null;
 
   overlay.addEventListener('mousemove', event => {
     const year = yearFromEvent(event);
@@ -562,7 +588,7 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
 
   overlay.addEventListener('mouseleave', () => {
     hideCursor();
-    if (lockedYear !== null) {
+    if (lockedYear != null) {
       updateDetailTable(snapshots.get(lockedYear), historicalYear(lockedYear));
     } else {
       updateDetailTable(snapshots.get(startYear), historicalYear(startYear));
@@ -590,9 +616,14 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
  * @param {number} historicalYear - Corresponding historical S&P 500 year.
  */
 function updateDetailTable(snapshot, historicalYear) {
-  document.getElementById('detail-table-title').innerHTML =
-    `${snapshot.year ?? '&mdash;'} ` +
-    `<span class="detail-table-historical-year">(based on ${historicalYear})</span>`;
+  const title = document.getElementById('detail-table-title');
+  title.innerHTML = `${snapshot.year ?? '&mdash;'} `;
+  if (historicalYear != null) {
+    const basedOn = document.createElement('span');
+    basedOn.className = 'detail-table-historical-year';
+    basedOn.textContent = `(based on ${historicalYear})`;
+    title.appendChild(basedOn);
+  }
 
   const body = document.getElementById('detail-table-body');
   const footer = document.getElementById('detail-table-footer');
@@ -653,6 +684,8 @@ async function init() {
   changeElement.className = 'stat-sub ' + (medianChange >= 0 ? 'positive' : 'negative');
 
   document.getElementById('success-value').textContent = successRate.toFixed(1) + '%';
+
+  document.getElementById('starting-card').addEventListener('click', showPreRetirementView);
 
   const sortedResults = [...results].sort((a, b) => a.total - b.total);
   const medianResult = sortedResults[Math.floor(sortedResults.length / 2)];
