@@ -41,10 +41,33 @@ let runDebounceTimer = null;   // Pending debounce timer ID
 function formatMoney(amount) {
   const sign = amount < 0 ? '-' : '';
   const absAmount = Math.abs(amount);
-  const formatted = absAmount >= 1e6 ? (absAmount / 1e6).toFixed(2) + 'M'
+  const formatted = absAmount >= 1e6 ? parseFloat((absAmount / 1e6).toFixed(2)) + 'M'
                   : absAmount >= 1e3 ? (absAmount / 1e3).toFixed(0) + 'K'
                   : absAmount.toFixed(0);
   return sign + '$' + formatted;
+}
+
+/**
+ * Compute a "nice" y-axis ceiling and grid step for a given data maximum.
+ * Adds 2% headroom, then rounds up to the smallest step from the set
+ * {1, 2, 2.5, 5} × 10^n that produces ≤5 grid lines.
+ *
+ * @param {number} dataMax
+ * @returns {{yMax: number, step: number, steps: number}}
+ */
+function niceAxis(dataMax) {
+  if (!dataMax) return { yMax: 1, step: 0.25, steps: 4 };
+  const rawMax = dataMax * 1.02;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawMax)));
+  for (const multiple of [0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10]) {
+    const step = multiple * magnitude;
+    const yMax = Math.ceil(rawMax / step) * step;
+    const steps = Math.round(yMax / step);
+    if (steps <= 5) {
+      return { yMax, step, steps };
+    }
+  }
+  return { yMax: rawMax, step: rawMax / 4, steps: 4 };
 }
 
 /**
@@ -390,17 +413,17 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
   const categories = [...uniqueCategories]
     .sort((a, b) => (firstAssets[b] || 0) - (firstAssets[a] || 0));
 
-  // Max y is the largest single-year value, with a little headroom.
-  let yMax = 0;
+  // Max y: find the largest single-year value, then snap to a nice axis ceiling.
+  let rawYMax = 0;
   for (const snapshot of history) {
     for (const category of Object.keys(snapshot.assets)) {
       const value = snapshot.assets[category];
-      if (value > yMax) {
-        yMax = value;
+      if (value > rawYMax) {
+        rawYMax = value;
       }
     }
   }
-  yMax = (yMax * 1.08) || 1;
+  const { yMax, steps: Y_STEPS } = niceAxis(rawYMax);
 
   const xScale = year  => CHART_MARGIN.left + (year - startYear) / retirementLength * CHART_WIDTH;
   const yScale =
@@ -413,7 +436,6 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
   }
 
   // Y-axis grid + labels
-  const Y_STEPS = 4;
   for (let i = 0; i <= Y_STEPS; i++) {
     const value = (Y_STEPS - i) / Y_STEPS * yMax;
     const y = yScale(value);
