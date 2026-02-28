@@ -208,8 +208,10 @@ def main():
       'max': max_total,
       'median': median_total,
     },
-    'simulations': len(results),
-    'totals': totals,
+    'results': [
+        {'start_year': result.start_year, 'total': totals[index]}
+        for index, result in enumerate(results)
+    ],
   }
 
   banner.print_banner(args.port)

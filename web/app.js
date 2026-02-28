@@ -64,14 +64,18 @@ function svgText(x, y, text, attrs = {}) {
   return tag;
 }
 
+let selectedBin = -1;
+
 /**
  * Render the outcome distribution histogram into the #histogram SVG element.
  *
  * @param {number[]} totals - Final portfolio value from each simulation.
  * @param {number} startingTotal - Portfolio value at retirement start (drawn as a reference marker).
  * @param {number} median - Median final portfolio value (drawn as a reference marker).
+ * @param {Array<{start_year: number, total: number}>} results - Result objects for drill-down.
+ * @param {number} retirementLength - Number of years in the retirement period.
  */
-function drawHistogram(totals, startingTotal, median) {
+function drawHistogram(totals, startingTotal, median, results, retirementLength) {
   const svg = document.getElementById('histogram');
   svg.innerHTML = '';
 
@@ -85,6 +89,12 @@ function drawHistogram(totals, startingTotal, median) {
     counts[Math.min(Math.floor((total - minVal) / binWidth), HISTOGRAM_BINS - 1)]++;
   }
   const maxCount = Math.max(...counts);
+
+  const binRuns = Array.from({ length: HISTOGRAM_BINS }, () => []);
+  for (const result of results) {
+    const idx = Math.min(Math.floor((result.total - minVal) / binWidth), HISTOGRAM_BINS - 1);
+    binRuns[idx].push(result);
+  }
 
   const xScale = value => MARGIN.left + ((value - minVal) / span) * INNER_WIDTH;
   const barWidth = INNER_WIDTH / HISTOGRAM_BINS;
@@ -120,6 +130,8 @@ function drawHistogram(totals, startingTotal, median) {
       rx: '2',
     });
 
+    rect.setAttribute('data-bin', i);
+
     const binMin = minVal + i * binWidth;
     const binMax = binMin + binWidth;
     const pct = (counts[i] / totals.length * 100).toFixed(1);
@@ -137,6 +149,26 @@ function drawHistogram(totals, startingTotal, median) {
     });
 
     rect.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+
+    rect.addEventListener('click', () => {
+      const wasSelected = selectedBin === i;
+      if (selectedBin >= 0) {
+        const prev = svg.querySelector(`[data-bin="${selectedBin}"]`);
+        if (prev) {
+          prev.removeAttribute('stroke');
+          prev.removeAttribute('stroke-width');
+        }
+      }
+      if (wasSelected) {
+        selectedBin = -1;
+        document.getElementById('bin-detail').hidden = true;
+      } else {
+        selectedBin = i;
+        rect.setAttribute('stroke', '#58a6ff');
+        rect.setAttribute('stroke-width', '2');
+        showBinDetail(binRuns[i], binMin, binMax, startingTotal, retirementLength);
+      }
+    });
 
     svg.appendChild(rect);
   }
@@ -185,11 +217,61 @@ function drawHistogram(totals, startingTotal, median) {
 }
 
 /**
+ * Populate and show the bin detail section with a summary card per simulation.
+ *
+ * @param {Array<{start_year: number, total: number}>} binRuns - Runs in this bin.
+ * @param {number} binMin - Lower bound of the bin range.
+ * @param {number} binMax - Upper bound of the bin range.
+ * @param {number} startingTotal - Portfolio value at retirement start.
+ * @param {number} retirementLength - Number of years in the retirement period.
+ */
+function showBinDetail(binRuns, binMin, binMax, startingTotal, retirementLength) {
+  const section = document.getElementById('bin-detail');
+  const title   = document.getElementById('bin-detail-title');
+  const grid    = document.getElementById('bin-detail-grid');
+
+  const count = binRuns.length;
+  title.textContent =
+    `${formatMoney(binMin)} \u2013 ${formatMoney(binMax)}`
+    + `  \u00b7  ${count} simulation${count === 1 ? '' : 's'}`;
+
+  grid.innerHTML = '';
+  const sorted = [...binRuns].sort((a, b) => a.total - b.total);
+
+  for (const run of sorted) {
+    const endYear = run.start_year + retirementLength;
+    const change = (run.total - startingTotal) / startingTotal * 100;
+
+    const card = document.createElement('div');
+    card.className = 'sim-card panel';
+
+    const period = document.createElement('div');
+    period.className = 'sim-card-period';
+    period.textContent = `${run.start_year} \u2192 ${endYear}`;
+
+    const total = document.createElement('div');
+    total.className = 'sim-card-total';
+    total.textContent = formatMoney(run.total);
+
+    const changeEl = document.createElement('div');
+    changeEl.className = 'sim-card-change ' + (change >= 0 ? 'positive' : 'negative');
+    changeEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + '%';
+
+    card.append(period, total, changeEl);
+    grid.appendChild(card);
+  }
+
+  section.hidden = false;
+  section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/**
  * Fetch simulation data from /data and populate the stat cards and histogram.
  */
 async function init() {
   const data = await fetch('/data').then(response => response.json());
-  const { retirement, starting_total, stats, simulations, totals } = data;
+  const { retirement, starting_total, stats, results } = data;
+  const totals = results.map(result => result.total);
 
   document.getElementById('age-range').textContent =
     `Age ${retirement.retirement_age} (${retirement.start_year})` +
@@ -199,7 +281,7 @@ async function init() {
   const medianChange = (stats.median - starting_total) / starting_total * 100;
 
   document.getElementById('starting-value').textContent = formatMoney(starting_total);
-  document.getElementById('simulations-value').textContent = simulations.toLocaleString();
+  document.getElementById('simulations-value').textContent = results.length.toLocaleString();
   document.getElementById('median-value').textContent = formatMoney(stats.median);
 
   const changeElement = document.getElementById('median-change');
@@ -208,7 +290,8 @@ async function init() {
 
   document.getElementById('success-value').textContent = successRate.toFixed(1) + '%';
 
-  drawHistogram(totals, starting_total, stats.median);
+  const retirementLength = retirement.end_year - retirement.start_year;
+  drawHistogram(totals, starting_total, stats.median, results, retirementLength);
 }
 
 window.addEventListener('load', init);

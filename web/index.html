@@ -37,10 +37,18 @@
     </section>
 
     <section class="panel">
-      <h2>Outcome Distribution</h2>
+      <div class="panel-header">
+        <h2>Outcome Distribution</h2>
+        <span class="panel-hint">Click a bar for simulation details</span>
+      </div>
       <div class="histogram-card">
         <svg id="histogram" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
       </div>
+    </section>
+
+    <section class="panel" id="bin-detail" hidden>
+      <h2 id="bin-detail-title"></h2>
+      <div id="bin-detail-grid"></div>
     </section>
 
   </main>
