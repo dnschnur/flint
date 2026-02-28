@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from enum import Enum
 from functools import cache, cached_property
+from typing import TypeAlias
 
 from rules import Rule, parse_rule
 
@@ -96,6 +97,10 @@ class AssetCategory(Enum):
     }
 
 
+AssetDict: TypeAlias = dict[AssetCategory, float]
+AssetDefaultDict: TypeAlias = defaultdict[AssetCategory, float]
+
+
 def _parse_asset_category(name: str) -> AssetCategory:
   """Parse an asset category by enum member name or display name.
 
@@ -136,7 +141,7 @@ class Assets:
     self.base_year = base_year
 
     # Base-year amounts by category.
-    self._amounts: dict[AssetCategory, float] = {}
+    self._amounts: AssetDict = {}
 
     # Rules mapping from (category, year) to rule.
     self._rules: defaultdict[AssetCategory, dict[int, Rule]] = defaultdict(dict)

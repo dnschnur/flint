@@ -6,8 +6,8 @@ accumulation phase and the retirement drawdown phase.
 
 from collections import defaultdict
 
-from assets import AssetCategory
-from budget import BudgetCategory
+from assets import AssetCategory, AssetDict, AssetDefaultDict
+from budget import BudgetCategory, BudgetDict
 from rmd import RMD
 from tax import Tax
 
@@ -97,8 +97,8 @@ def _withdrawal_multiplier(
 
 
 def _apply_529_withdrawal(
-  new_assets: defaultdict[AssetCategory, float],
-  budget: dict[BudgetCategory, float],
+  new_assets: AssetDefaultDict,
+  budget: BudgetDict,
   eligible_529: float
 ) -> float:
   """Unconditionally withdraw from 529 to cover 529-eligible school expenses.
@@ -129,8 +129,8 @@ def _apply_529_withdrawal(
 
 
 def _apply_hsa_withdrawal(
-  new_assets: defaultdict[AssetCategory, float],
-  budget: dict[BudgetCategory, float],
+  new_assets: AssetDefaultDict,
+  budget: BudgetDict,
   shortfall: float
 ) -> float:
   """Withdraw from HSA to cover a health expense shortfall.
@@ -181,15 +181,15 @@ class Strategy:
   def apply(
     self,
     year: int,
-    assets: dict[AssetCategory, float],
+    assets: AssetDict,
     income: float,
-    budget: dict[BudgetCategory, float],
+    budget: BudgetDict,
     retired: bool = False,
     age: int = 0,
     eligible_529: float = 0.0,
     cg_fraction: float = 0.0,
     employer_match_fraction: float = 0.0
-  ) -> defaultdict[AssetCategory, float]:
+  ) -> AssetDefaultDict:
     """Returns updated asset values after applying income, tax, and budget for the year.
 
     Processing order:
@@ -238,7 +238,7 @@ class Strategy:
       ValueError: If pre-retirement shortfall cannot be covered by liquid assets.
     """
     # Start with a copy of current assets, defaulting missing categories to 0.0.
-    new_assets: defaultdict[AssetCategory, float] = defaultdict(float, assets)
+    new_assets: AssetDefaultDict = defaultdict(float, assets)
 
     # Calculate and withdraw RMDs first; they count as ordinary income.
     rmd_income = 0.0

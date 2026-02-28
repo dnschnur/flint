@@ -5,7 +5,11 @@ import os
 
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import TypeAlias
 from urllib.parse import urlparse, parse_qs
+
+SimulationData: TypeAlias = dict[str, object]
+SimulateFunc: TypeAlias = Callable[[str, int | None, int | None], SimulationData | None]
 
 _WEB_ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web'))
 
@@ -16,7 +20,7 @@ _MIME_TYPES = {
 }
 
 
-def _make_handler(data: dict, simulate: Callable, scenarios: list[str]):
+def _make_handler(data: SimulationData, simulate: SimulateFunc, scenarios: list[str]):
   """Create an HTTP request handler class bound to simulation data and a re-run callable.
 
   Args:
@@ -105,7 +109,7 @@ def _make_handler(data: dict, simulate: Callable, scenarios: list[str]):
   return Handler
 
 
-def serve(data: dict, simulate: Callable, scenarios: list[str], port: int = 8080):
+def serve(data: SimulationData, simulate: SimulateFunc, scenarios: list[str], port: int = 8080):
   """Starts the HTTP server and blocks until Ctrl-C.
 
   Args:

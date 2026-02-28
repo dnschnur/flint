@@ -9,14 +9,16 @@ import csv
 
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import TypeAlias
 
-from assets import Assets, AssetCategory
-from budget import Budget, BudgetCategory
+from assets import Assets, AssetCategory, AssetDict, AssetDefaultDict
+from budget import Budget, BudgetCategory, BudgetDict
 from income import Income
 from rmd import RMD
 from strategy import Strategy
 from tax import Tax
 
+YearSnapshot: TypeAlias = dict[str, object]
 
 
 @dataclass
@@ -31,7 +33,7 @@ class SimulationResult:
   """
   start_year: int
   assets: defaultdict[AssetCategory, float]
-  history: list[dict] = field(default_factory=list)
+  history: list[YearSnapshot] = field(default_factory=list)
 
 
 class Simulation:
@@ -79,7 +81,7 @@ class Simulation:
     self.simulation_min_year = simulation_min_year or available_years[0]
     self.simulation_max_year = simulation_max_year or available_years[-1]
 
-  def _get_year_budget(self, year: int) -> dict[BudgetCategory, float]:
+  def _get_year_budget(self, year: int) -> BudgetDict:
     """Returns budget amounts for the given year, omitting zero or absent categories."""
     return {
       category: amount
@@ -132,7 +134,7 @@ class Simulation:
     self,
     start_year: int,
     end_year: int,
-    starting_assets: dict[AssetCategory, float] | None = None
+    starting_assets: AssetDict | None = None
   ):
     """Run Monte Carlo simulation across all available historical periods.
 
@@ -217,7 +219,7 @@ class Simulation:
     start_year: int,
     end_year: int,
     historical_start_year: int
-  ) -> tuple[defaultdict[AssetCategory, float], list[dict]]:
+  ) -> tuple[AssetDefaultDict, list[YearSnapshot]]:
     """Run a single simulation using a specific historical period.
 
     Args:

@@ -9,14 +9,16 @@ import os
 import statistics
 import tomllib
 
+from collections import defaultdict
+
 import banner
 import server
 
-from collections import defaultdict
 from assets import Assets, AssetCategory
 from budget import Budget
 from income import Income
 from rmd import RMD
+from server import SimulationData
 from simulation import Simulation
 from tax import Tax
 
@@ -170,7 +172,7 @@ def main():
   if initial_scenario not in available_scenarios:
     parser.error(f'Scenario not found: "{initial_scenario}"')
 
-  def run_simulation(scenario_name: str, start_year: int | None = None, end_year: int | None = None) -> dict | None:
+  def run_simulation(scenario_name: str, start_year: int | None = None, end_year: int | None = None) -> SimulationData | None:
     """Run a full simulation and return the server data dict, or None if no results."""
     try:
       ctx = _init_scenario(scenario_name, args.sp500_start, args.sp500_end)

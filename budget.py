@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from enum import Enum
 from functools import cache, cached_property
+from typing import TypeAlias
 
 from assets import AssetCategory
 from rules import Rule, parse_rule
@@ -99,6 +100,9 @@ class BudgetCategory(Enum):
     }
 
 
+BudgetDict: TypeAlias = dict[BudgetCategory, float]
+
+
 def _parse_budget_category(name: str) -> BudgetCategory:
   """Parse a budget category by enum member name or display name.
 
@@ -151,7 +155,7 @@ class Budget:
     self.base_year = base_year
 
     # Base-year amounts by category.
-    self._amounts: dict[BudgetCategory, float] = {}
+    self._amounts: BudgetDict = {}
 
     # Rules mapping from (category, year) to rule.
     self._rules: defaultdict[BudgetCategory, dict[int, Rule]] = defaultdict(dict)
