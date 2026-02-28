@@ -66,6 +66,66 @@ def _resolve_tax_paths(country: str, state: str | None) -> tuple[str, str, str |
   return os.path.join(base, 'income.csv'), os.path.join(base, 'capital_gains.csv'), state_path
 
 
+def _init_scenario(name: str, sp500_start: int | None, sp500_end: int | None) -> dict:
+  """Load a scenario by name and initialize all simulation objects.
+
+  Args:
+    name: Scenario name (without .toml extension).
+    sp500_start: Minimum year for S&P 500 data, or None for earliest available.
+    sp500_end: Maximum year for S&P 500 data, or None for latest available.
+
+  Returns:
+    A context dict with keys: name, sim, base_year, age,
+    default_retirement_age, default_end_age.
+
+  Raises:
+    FileNotFoundError: If the scenario file does not exist.
+    ValueError: If the scenario is missing a required field.
+  """
+  scenario = _load_scenario(name)
+
+  base_year = scenario.get('year', 2025)
+
+  age = scenario.get('age')
+  if age is None:
+    raise ValueError(f'Scenario "{name}" is missing required field: age')
+
+  country = scenario.get('country', 'us')
+  state = scenario.get('state')
+  if state:
+    state = state.lower()
+
+  income_path, cg_path, state_path = _resolve_tax_paths(country, state)
+
+  assets = Assets(base_year, scenario.get('assets', {}))
+  budget = Budget(base_year, scenario.get('budget', {}))
+  income = Income(base_year, scenario.get('income', {}))
+  rmd = RMD('data/rmd.csv')
+  tax = Tax(income_path, cg_path, state_path, data_year=base_year)
+
+  sim = Simulation(
+    assets=assets,
+    budget=budget,
+    income=income,
+    rmd=rmd,
+    tax=tax,
+    current_age=age,
+    data_year=base_year,
+    sp500_path='data/sp500.csv',
+    simulation_min_year=sp500_start,
+    simulation_max_year=sp500_end,
+  )
+
+  return {
+    'name': name,
+    'sim': sim,
+    'base_year': base_year,
+    'age': age,
+    'default_retirement_age': scenario.get('retirement_age', 65),
+    'default_end_age': scenario.get('retirement_end', 90),
+  }
+
+
 def main():
   parser = argparse.ArgumentParser(
     description='Run retirement simulations using historical S&P 500 data'
@@ -73,8 +133,8 @@ def main():
   parser.add_argument(
     '--scenario',
     type=str,
-    default='default',
-    help='Scenario name: reads from scenarios/<name>.toml (default: "default")'
+    default=None,
+    help='Scenario name: reads from scenarios/<name>.toml (default: first non-default scenario)'
   )
   parser.add_argument(
     '--sp500-start',
@@ -96,59 +156,40 @@ def main():
   )
   args = parser.parse_args()
 
-  try:
-    scenario = _load_scenario(args.scenario)
-  except FileNotFoundError as e:
-    parser.error(str(e))
-
-  base_year = scenario.get('year', 2025)
-
-  age = scenario.get('age')
-  if age is None:
-    parser.error('Scenario is missing required field: age')
-
-  country = scenario.get('country', 'us')
-  state = scenario.get('state')
-  if state:
-    state = state.lower()
-
-  try:
-    income_path, cg_path, state_path = _resolve_tax_paths(country, state)
-  except FileNotFoundError as e:
-    parser.error(str(e))
-
-  assets = Assets(base_year, scenario.get('assets', {}))
-  budget = Budget(base_year, scenario.get('budget', {}))
-  income = Income(base_year, scenario.get('income', {}))
-  rmd = RMD('data/rmd.csv')
-  tax = Tax(income_path, cg_path, state_path, data_year=base_year)
-
-  sim = Simulation(
-    assets=assets,
-    budget=budget,
-    income=income,
-    rmd=rmd,
-    tax=tax,
-    current_age=age,
-    data_year=base_year,
-    sp500_path='data/sp500.csv',
-    simulation_min_year=args.sp500_start,
-    simulation_max_year=args.sp500_end
+  available_scenarios = sorted(
+    os.path.splitext(path)[0]
+    for path in os.listdir('scenarios')
+    if path.endswith('.toml')
   )
 
-  default_retirement_age = scenario.get('retirement_age', age + 15)
-  default_end_age = scenario.get('retirement_end', age + 45)
+  # Use the given --scenario, or default to the first non-default one alphabetically.
+  initial_scenario = args.scenario
+  if not initial_scenario:
+    initial_scenario = next((name for name in available_scenarios if name != 'default'), 'default')
 
-  default_start = base_year + (default_retirement_age - age)
-  default_end = base_year + (default_end_age - age)
+  if initial_scenario not in available_scenarios:
+    parser.error(f'Scenario not found: "{initial_scenario}"')
 
-  def run_simulation(start_year: int, end_year: int) -> dict | None:
+  def run_simulation(scenario_name: str, start_year: int | None = None, end_year: int | None = None) -> dict | None:
     """Run a full simulation and return the server data dict, or None if no results."""
-    years_until_retirement = start_year - base_year
-    retirement_age = age + years_until_retirement
+    try:
+      ctx = _init_scenario(scenario_name, args.sp500_start, args.sp500_end)
+    except (FileNotFoundError, ValueError):
+      return None
 
-    years_until_end = end_year - base_year
-    end_age = age + years_until_end
+    sim = ctx['sim']
+    base_year = ctx['base_year']
+    age = ctx['age']
+    default_retirement_age = ctx['default_retirement_age']
+    default_end_age = ctx['default_end_age']
+
+    if start_year is None:
+      start_year = base_year + (default_retirement_age - age)
+    if end_year is None:
+      end_year = base_year + (default_end_age - age)
+
+    retirement_age = age + (start_year - base_year)
+    end_age = age + (end_year - base_year)
 
     starting_assets = None
     pre_retirement_history = []
@@ -190,6 +231,8 @@ def main():
         'end_age': end_age,
       },
       'scenario': {
+        'name': scenario_name,
+        'scenarios': available_scenarios,
         'base_year': base_year,
         'age': age,
         'default_retirement_age': default_retirement_age,
@@ -208,13 +251,13 @@ def main():
       ],
     }
 
-  initial_data = run_simulation(default_start, default_end)
+  initial_data = run_simulation(initial_scenario)
   if initial_data is None:
-    print('No simulation results. Check retirement_start and retirement_end in your scenario.')
+    print('No simulation results. Check retirement_age and retirement_end in your scenario.')
     return
 
   banner.print_banner(args.port)
-  server.serve(initial_data, run_simulation, port=args.port)
+  server.serve(initial_data, run_simulation, available_scenarios, port=args.port)
 
 
 if __name__ == '__main__':

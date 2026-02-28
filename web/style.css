@@ -1,14 +1,16 @@
 :root {
-  --background: #0d1117;
-  --surface:    #161b22;
-  --border:     #30363d;
-  --text:       #e6edf3;
-  --muted:      #8b949e;
-  --accent:     #58a6ff;
-  --positive:   #3fb950;
-  --negative:   #f85149;
-  --accent-40:  #58a6ff66;
-  --border-50:  #30363d80;
+  --background:    #0d1117;
+  --surface:       #161b22;
+  --border:        #30363d;
+  --text:          #e6edf3;
+  --muted:         #8b949e;
+  --accent:        #58a6ff;
+  --positive:      #3fb950;
+  --negative:      #f85149;
+  --divider:       #30363d80;
+  --card-hover-outline: #58a6ff66;
+  --input-outline: #30363db3;
+  --input-focus:   #58a6ff99;
 }
 
 *, *::before, *::after {
@@ -40,7 +42,7 @@ header, footer {
 /* ── Header ─────────────────────────────────────────── */
 
 header {
-  border-bottom: 1px solid var(--border-50);
+  border-bottom: 1px solid var(--divider);
   padding: 20px 0;
 }
 
@@ -112,7 +114,7 @@ main {
 
 #starting-card:hover,
 #median-card:hover {
-  border-color: var(--accent-40);
+  border-color: var(--card-hover-outline);
 }
 
 /* ── Controls bar ────────────────────────────────────── */
@@ -140,7 +142,7 @@ main {
 .year-input {
   width: 56px;
   background: rgba(13, 17, 23, 0.6);
-  border: 1px solid rgba(48, 54, 61, 0.7);
+  border: 1px solid var(--input-outline);
   border-radius: 6px;
   color: var(--text);
   font-family: inherit;
@@ -161,12 +163,38 @@ main {
 }
 
 .year-input:focus {
-  border-color: rgba(88, 166, 255, 0.6);
+  border-color: var(--input-focus);
 }
 
 .run-error {
   font-size: 12px;
   color: var(--negative);
+}
+
+.scenario-group {
+  margin-left: auto;
+}
+
+#input-scenario {
+  background: rgba(13, 17, 23, 0.6)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238b949e' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 9px center;
+  border: 1px solid var(--input-outline);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  min-width: 120px;
+  padding: 5px 28px 5px 10px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+#input-scenario:focus {
+  border-color: var(--input-focus);
 }
 
 /* ── Panels ──────────────────────────────────────────── */
@@ -244,7 +272,7 @@ h2 {
 }
 
 .sim-card:hover {
-  border-color: var(--accent-40);
+  border-color: var(--card-hover-outline);
 }
 
 .sim-card-period {
@@ -343,7 +371,7 @@ h2 {
 
 .detail-table td {
   padding: 5px 0;
-  border-top: 1px solid var(--border-50);
+  border-top: 1px solid var(--divider);
 }
 
 .detail-table tfoot td {
@@ -377,7 +405,7 @@ h2 {
   background: rgba(22, 27, 34, 0.82);
   backdrop-filter: blur(12px) saturate(150%);
   -webkit-backdrop-filter: blur(12px) saturate(150%);
-  border: 1px solid var(--border-50);
+  border: 1px solid var(--divider);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 13px;
@@ -396,7 +424,7 @@ h2 {
 /* ── Footer ──────────────────────────────────────────── */
 
 footer {
-  border-top: 1px solid var(--border-50);
+  border-top: 1px solid var(--divider);
   padding: 16px 0;
   margin-top: 8px;
 }

@@ -728,6 +728,41 @@ function renderOverview() {
 }
 
 /**
+ * Switch to a different scenario, re-running with that scenario's default ages.
+ * Updates the age inputs to reflect the new scenario's defaults.
+ *
+ * @param {string} name - Scenario name as it appears in appData.scenario.scenarios.
+ */
+async function switchScenario(name) {
+  if (isRunning) return;
+
+  const error = document.getElementById('run-error');
+  error.textContent = '';
+
+  if (!document.getElementById('view-detail').hidden) {
+    hideDetailView();
+  }
+
+  isRunning = true;
+  try {
+    const response = await fetch(`/simulate?scenario=${encodeURIComponent(name)}`);
+    const data = await response.json();
+    if (!response.ok) {
+      error.textContent = data.error || 'Simulation failed.';
+      return;
+    }
+    appData = data;
+    document.getElementById('input-retirement-age').value = appData.scenario.default_retirement_age;
+    document.getElementById('input-end-age').value = appData.scenario.default_end_age;
+    renderOverview();
+  } catch {
+    error.textContent = 'Failed to connect to server.';
+  } finally {
+    isRunning = false;
+  }
+}
+
+/**
  * Schedule a simulation run after a short debounce delay.
  * Resets the timer on each call so rapid input changes only trigger one run.
  */
@@ -792,6 +827,16 @@ async function init() {
   const endInput = document.getElementById('input-end-age');
   endInput.value = appData.scenario.default_end_age;
   endInput.addEventListener('input', scheduleRun);
+
+  const scenarioSelect = document.getElementById('input-scenario');
+  for (const name of appData.scenario.scenarios) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    option.selected = name === appData.scenario.name;
+    scenarioSelect.appendChild(option);
+  }
+  scenarioSelect.addEventListener('change', () => switchScenario(scenarioSelect.value));
 
   document.getElementById('starting-card').addEventListener('click', showPreRetirementView);
   document.getElementById('median-card').addEventListener('click', () => {

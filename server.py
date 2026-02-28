@@ -16,12 +16,14 @@ _MIME_TYPES = {
 }
 
 
-def _make_handler(data: dict, simulate: Callable[[int, int], dict | None]):
+def _make_handler(data: dict, simulate: Callable, scenarios: list[str]):
   """Create an HTTP request handler class bound to simulation data and a re-run callable.
 
   Args:
     data: Current simulation data dict, served at /data and updated when /simulate is called.
-    simulate: Callable that re-runs the simulation with a given start and end year.
+    simulate: Callable that re-runs the simulation with optional start year, end year,
+      and scenario name. None values use scenario defaults.
+    scenarios: Valid scenario names accepted by /simulate.
   """
 
   class Handler(BaseHTTPRequestHandler):
@@ -48,14 +50,25 @@ def _make_handler(data: dict, simulate: Callable[[int, int], dict | None]):
 
       if path == '/simulate':
         params = parse_qs(parsed.query)
-        try:
-          start_year = int(params['start_year'][0])
-          end_year = int(params['end_year'][0])
-        except (KeyError, ValueError, IndexError):
-          self._send_json({'error': 'start_year and end_year are required integers'}, 400)
-          return
 
-        new_data = simulate(start_year, end_year)
+        # start_year and end_year are optional; absent means use scenario defaults.
+        start_year = end_year = None
+        if 'start_year' in params or 'end_year' in params:
+          try:
+            start_year = int(params['start_year'][0])
+            end_year = int(params['end_year'][0])
+          except (KeyError, ValueError, IndexError):
+            self._send_json({'error': 'start_year and end_year must both be integers'}, 400)
+            return
+
+        scenario_name = data['scenario']['name']
+        if 'scenario' in params:
+          scenario_name = params['scenario'][0]
+          if scenario_name not in scenarios:
+            self._send_json({'error': 'Unknown scenario.'}, 400)
+            return
+
+        new_data = simulate(scenario_name, start_year, end_year)
         if new_data is None:
           self._send_json({'error': 'No simulation results. Check your date ranges.'}, 400)
           return
@@ -92,15 +105,17 @@ def _make_handler(data: dict, simulate: Callable[[int, int], dict | None]):
   return Handler
 
 
-def serve(data: dict, simulate: Callable[[int, int], dict | None], port: int = 8080):
+def serve(data: dict, simulate: Callable, scenarios: list[str], port: int = 8080):
   """Starts the HTTP server and blocks until Ctrl-C.
 
   Args:
     data: Initial simulation results dict to expose at /data.
-    simulate: Callable that re-runs the simulation with a given start and end year.
+    simulate: Callable that re-runs the simulation with optional start year, end year,
+      and scenario name.
+    scenarios: Valid scenario names for /simulate.
     port: Port to listen on.
   """
-  handler = _make_handler(data, simulate)
+  handler = _make_handler(data, simulate, scenarios)
   server = HTTPServer(('', port), handler)
   try:
     server.serve_forever()
