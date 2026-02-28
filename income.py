@@ -75,12 +75,7 @@ class Income:
     return amount
 
   def _project_other_income(self, year: int) -> float:
-    """Returns the projected other income for the given year.
-
-    Unlike job income, other income has no default growth rate: if no rule is set for a given year,
-    the amount remains unchanged. Rules that allow growth (rule.apply_growth=True) will still only
-    apply the rule itself — there is no default rate to compound on top of it.
-    """
+    """Returns the projected other income for the given year."""
     if year <= self.base_year:
       return self._other_income
 
@@ -89,5 +84,9 @@ class Income:
       rule = self._rules_other.get(i)
       if rule:
         amount = rule.apply(amount)
+        if rule.apply_growth:
+          amount *= 1 + self._default_job_increase_rate
+      else:
+        amount *= 1 + self._default_job_increase_rate
 
     return amount

@@ -258,8 +258,7 @@ The `[income]` section specifies annual income.
 "Other Income" = 10000    # Rental income, part-time work, etc.; continues through retirement
 ```
 
-Job income grows at 3% per year by default. Other income has no default growth; it stays flat
-unless a rule changes it.
+Both income types grow at 3% per year by default.
 
 Social Security, pension income, or other retirement income streams that start at a specific age
 are best modeled as Other Income rules that set the amount in the year they begin:
