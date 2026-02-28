@@ -193,7 +193,7 @@ h2 {
 }
 
 .sim-card:hover {
-  border-color: var(--accent);
+  border-color: rgba(88, 166, 255, 0.4);
 }
 
 .sim-card-period {
