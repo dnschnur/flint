@@ -654,6 +654,11 @@ async function init() {
 
   document.getElementById('success-value').textContent = successRate.toFixed(1) + '%';
 
+  const sortedResults = [...results].sort((a, b) => a.total - b.total);
+  const medianResult = sortedResults[Math.floor(sortedResults.length / 2)];
+  document.getElementById('median-card')
+    .addEventListener('click', () => showDetailView(medianResult));
+
   const retirementLength = retirement.end_year - retirement.start_year;
   drawHistogram(totals, starting_total, stats.median, results, retirementLength);
 }

@@ -108,6 +108,15 @@ main {
 .positive { color: var(--positive); }
 .negative { color: var(--negative); }
 
+#median-card {
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+#median-card:hover {
+  border-color: rgba(88, 166, 255, 0.4);
+}
+
 /* ── Panels ──────────────────────────────────────────── */
 
 .panel {
