@@ -431,12 +431,19 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
     stroke: '#30363d', 'stroke-width': '1',
   }));
 
-  const X_LABELS = Math.min(retirementLength, 6);
-  for (let i = 0; i <= X_LABELS; i++) {
-    const year = Math.round(startYear + (i / X_LABELS) * retirementLength);
-    const x = xScale(year);
-    const anchor = i === 0 ? 'start' : i === X_LABELS ? 'end' : 'middle';
-    svg.appendChild(svgText(x, CHART_MARGIN.top + CHART_HEIGHT + 18, String(year), {
+  // Use an integer step to avoid floating-point rounding placing labels on fractional years.
+  // Math.round gives step=1 for periods up to ~8 years, step=2 for ~9–14 years, etc.
+  const xLabels = [];
+  const labelStep = Math.max(1, Math.round(retirementLength / 6));
+  for (let year = startYear; year < endYear; year += labelStep) {
+    xLabels.push(year);
+  }
+  xLabels.push(endYear);
+
+  for (let i = 0; i < xLabels.length; i++) {
+    const x = xScale(xLabels[i]);
+    const anchor = i === 0 ? 'start' : i === xLabels.length - 1 ? 'end' : 'middle';
+    svg.appendChild(svgText(x, CHART_MARGIN.top + CHART_HEIGHT + 18, String(xLabels[i]), {
       'text-anchor': anchor, fill: '#8b949e', 'font-size': '11',
     }));
   }
