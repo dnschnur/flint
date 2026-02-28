@@ -2,6 +2,7 @@ country = "us"
 state = "ca"
 
 year = 2025
+age  = 45
 
 [assets]
 "Cash" = 100000

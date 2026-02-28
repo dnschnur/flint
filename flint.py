@@ -80,11 +80,6 @@ def main():
     help='Last year of retirement (inclusive)'
   )
   parser.add_argument(
-    'age',
-    type=int,
-    help='Current age'
-  )
-  parser.add_argument(
     '--scenario',
     type=str,
     default='default',
@@ -117,6 +112,10 @@ def main():
 
   base_year = scenario.get('year', 2025)
 
+  age = scenario.get('age')
+  if age is None:
+    parser.error('Scenario is missing required field: age')
+
   country = scenario.get('country', 'us')
   state = scenario.get('state')
   if state:
@@ -139,7 +138,7 @@ def main():
     income=income,
     rmd=rmd,
     tax=tax,
-    current_age=args.age,
+    current_age=age,
     data_year=base_year,
     sp500_path='data/sp500.csv',
     simulation_min_year=args.sp500_start,
@@ -167,10 +166,10 @@ def main():
     return
 
   years_until_retirement = args.start_year - base_year
-  retirement_age = args.age + years_until_retirement
+  retirement_age = age + years_until_retirement
 
   years_until_end = args.end_year - base_year
-  end_age = args.age + years_until_end
+  end_age = age + years_until_end
 
   totals = [sum(result.assets.values()) for result in results]
 
