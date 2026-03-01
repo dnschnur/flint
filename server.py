@@ -120,7 +120,7 @@ def serve(data: SimulationData, simulate: SimulateFunc, scenarios: list[str], po
     port: Port to listen on.
   """
   handler = _make_handler(data, simulate, scenarios)
-  server = HTTPServer(('', port), handler)
+  server = HTTPServer(('127.0.0.1', port), handler)
   try:
     server.serve_forever()
   except KeyboardInterrupt:
