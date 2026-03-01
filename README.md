@@ -45,7 +45,7 @@ python flint.py [options]
 
 | Option | Description | Default |
 |---|---|---|
-| `--scenario NAME` | Load `scenarios/<name>.toml` | First scenario alphabetically (excluding `default`) |
+| `--scenario NAME` | Load `scenarios/<name>.toml` | First scenario alphabetically; falls back to `default` |
 | `--sp500-start YEAR` | Minimum year for historical S&P 500 data | Earliest available (1871) |
 | `--sp500-end YEAR` | Maximum year for historical S&P 500 data | Latest available |
 | `--port PORT` | Port for the local web server | 8080 |
