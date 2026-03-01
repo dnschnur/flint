@@ -156,6 +156,22 @@ Override any account's default annual growth rate with `[assets.growth]`. Values
 "Bonds"       = 4.5  # 4.5% instead of the default 4%
 ```
 
+#### Capital gains percentage
+
+`Capital Gains Percentage` sets what fraction of the current Stocks balance is gains above cost
+basis, i.e. what percentage would be subject to capital gains tax if you sold everything today.
+The default is `50` (50%).
+
+```toml
+[assets]
+"Stocks"                   = 500000
+"Capital Gains Percentage" = 60     # 60% of Stocks is gains; 40% is cost basis
+```
+
+During the simulation, future Stocks contributions (from the `Stocks` budget category) are counted
+as new cost basis, which reduces the effective capital gains fraction over time. Market growth
+does not change the cost basis; all growth accrues as gains.
+
 ### Budget
 
 The `[budget]` section lists annual spending by category. Amounts are in the base year's dollars.

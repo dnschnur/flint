@@ -214,6 +214,33 @@ class Simulation:
           data[year] = value
     return data
 
+  def _compute_stock_basis(self, start_year: int, starting_stocks: float) -> float:
+    """Estimate the stock cost basis at the start of retirement.
+
+    Starts from the base-year Stocks balance scaled by (1 - Capital Gains Percentage), then
+    adds all pre-retirement Stocks budget contributions, which are pure cost basis (you paid for
+    them; they haven't grown yet).
+
+    Pre-retirement withdrawals from Stocks are not accounted for, which slightly overestimates
+    the basis (and conservatively underestimates capital gains). This is acceptable given that
+    Stocks is the last account tapped for pre-retirement shortfalls.
+
+    Args:
+      start_year: The retirement start year.
+      starting_stocks: The Stocks balance at the start of retirement.
+
+    Returns:
+      Estimated cost basis, clamped to [0, starting_stocks].
+    """
+    initial_stocks = self.assets.get_category(AssetCategory.STOCKS, self.data_year)
+    basis = initial_stocks * (1.0 - self.assets.base_cg_fraction)
+
+    # Stock budget contributions during pre-retirement are pure cost basis.
+    for year in range(self.data_year, start_year):
+      basis += self.budget.get_category(BudgetCategory.STOCKS, year)
+
+    return max(0.0, min(basis, starting_stocks))
+
   def _run_single_simulation(
     self,
     starting_assets: dict[AssetCategory, float],
@@ -237,7 +264,7 @@ class Simulation:
     history = []
     current_assets = defaultdict(float, starting_assets)
     current_historical_year = historical_start_year
-    retirement_length = end_year - start_year
+    stock_basis = self._compute_stock_basis(start_year, current_assets.get(AssetCategory.STOCKS, 0.0))
 
     for year in range(start_year, end_year + 1):
       age = self.current_age + (year - self.data_year)
@@ -252,10 +279,9 @@ class Simulation:
         },
       })
 
-      # Capital gains fraction ramps linearly from 0 at retirement start to 1 at the end.
-      # This models the idea that assets held longer into retirement have a higher proportion
-      # of gains relative to basis. Might be worth making this more sophisticated eventually.
-      cg_fraction = (year - start_year) / retirement_length if retirement_length else 0.0
+      # Compute capital gains fraction from tracked cost basis.
+      old_stocks = current_assets.get(AssetCategory.STOCKS, 0.0)
+      cg_fraction = max(0.0, 1.0 - stock_basis / old_stocks) if old_stocks > 0 else 0.0
 
       year_income = self.income.get(year, retired=True)
       year_budget = self._get_year_budget(year)
@@ -266,6 +292,12 @@ class Simulation:
         cg_fraction=cg_fraction,
         employer_match_fraction=self.budget.get_employer_match_fraction(year)
       )
+
+      # After withdrawals, reduce basis proportionally to the Stocks balance reduction.
+      # Market growth (applied below in apply_year) leaves basis unchanged — all growth is gains.
+      new_stocks = current_assets.get(AssetCategory.STOCKS, 0.0)
+      if old_stocks > 0 and new_stocks < old_stocks:
+        stock_basis *= new_stocks / old_stocks
 
       if year < end_year:  # Don't grow in the final year
         next_historical_year = current_historical_year + 1

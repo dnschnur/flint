@@ -134,6 +134,9 @@ class Assets:
                 whose string values are rule strings (e.g. '+900000', '=2300000').
             'growth': sub-dict of per-category growth rate overrides, where values are
                 percentages (e.g. 0 for 0%, 7 for 7%).
+            'Capital Gains Percentage': percentage of the base-year Stocks balance that is
+                currently gains (above cost basis), as a number (e.g. 50 for 50%) or a
+                percentage string (e.g. '50%'). Defaults to 50.
 
     Raises:
       ValueError: If any key does not match a known AssetCategory.
@@ -149,8 +152,16 @@ class Assets:
     # Per-category growth rate overrides (fraction, e.g. 0.05 for 5%).
     self._growth: dict[AssetCategory, float] = {}
 
+    # Fraction of the base-year Stocks balance that is currently gains (above cost basis).
+    # Future purchases add to cost basis and reduce this over time.
+    capital_gains_percentage = str(data.get('Capital Gains Percentage', 50)).strip()
+    if capital_gains_percentage.endswith('%'):
+      self.base_cg_fraction = float(capital_gains_percentage[:-1]) / 100.0
+    else:
+      self.base_cg_fraction = float(capital_gains_percentage) / 100.0
+
     for key, value in data.items():
-      if key in ('rules', 'growth'):
+      if key in ('rules', 'growth', 'Capital Gains Percentage'):
         continue
       self._amounts[_parse_asset_category(key)] = float(value)
 
