@@ -178,7 +178,9 @@ class Assets:
     return sum(self.get_category(category, year) for category in self._amounts)
 
   def apply_year(
-    self, category: AssetCategory, year: int, amount: float, growth_rate: float | None = None
+    self, category: AssetCategory, year: int, amount: float,
+    growth_rate: float | None = None,
+    context: AssetDict | None = None,
   ) -> float:
     """Apply one year's rule (if any) and growth to an asset balance.
 
@@ -193,6 +195,9 @@ class Assets:
       amount: The current balance before this year's rule and growth.
       growth_rate: Growth rate to apply. Defaults to category.growth if not specified. Pass an
           explicit rate (e.g. S&P 500 return) to override the default for stock-like assets.
+      context: Optional asset snapshot keyed by AssetCategory, holding pre-rule balances for this
+          year. Passed to rule.apply() to support cross-category rules (e.g. "+45%@Real Estate").
+          When None, cross-category rules have no effect.
 
     Returns:
       The updated balance after applying any rule and growth.
@@ -200,7 +205,7 @@ class Assets:
     rate = growth_rate if growth_rate is not None else self._growth.get(category, category.growth)
     rule = self._rules.get(category, {}).get(year)
     if rule:
-      amount = rule.apply(amount)
+      amount = rule.apply(amount, context)
       if rule.apply_growth:
         amount *= 1 + rate
     else:

@@ -298,7 +298,15 @@ entries.
 | `"-N"` | Subtract a dollar amount | `"-50000"` |
 | `"+N%"` | Increase by a percentage | `"+10%"` |
 | `"-N%"` | Decrease by a percentage | `"-20%"` |
+| `"+N%@Category"` | Add N% of another category's current value | `"+45%@Real Estate"` |
+| `"-N%@Category"` | Subtract N% of another category's current value | `"-10%@Stocks"` |
 | `N` | (bare number) Set to an absolute value | `500000` |
+
+Cross-category rules (`@Category`) reference another asset's value as it stands *before* any rules
+for that year are applied. This makes it straightforward to model transactions where one asset's
+proceeds flow into another: the source amount is always the pre-transaction market value, regardless
+of what other rules fire in the same year. The category name must match an account type exactly
+(e.g. `"Real Estate"`, `"401K"`).
 
 After a rule is applied, Flint may also apply the category's default growth or inflation rate for
 that year. The default behavior depends on the rule type:
@@ -321,20 +329,22 @@ Override the default by appending `!` (suppress growth) or `+` (force growth):
 
 #### Selling a house
 
-Add the net proceeds to Cash and update (or zero out) the Real Estate balance:
+Selling outright: zero out Real Estate and add the proceeds to Cash. The `+95%` accounts for 5%
+in sale fees; the cross-category reference ensures the correct amount is transferred even if the
+Real Estate value has drifted from your original estimate:
 
 ```toml
 rules = [
-  {year = 2038, "Cash" = "+500000", "Real Estate" = "=0"},
+  {year = 2038, "Real Estate" = "=0", "Cash" = "+95%@Real Estate"},
 ]
 ```
 
-If you plan to downsize rather than sell entirely:
+Downsizing: reduce Real Estate by half and transfer most of the freed value to Cash:
 
 ```toml
 rules = [
-  # Net $400K from the sale after buying the smaller home
-  {year = 2038, "Cash" = "+400000", "Real Estate" = "=300000"},
+  # Buy a home half the size; net 45% of original value after fees and purchase cost
+  {year = 2038, "Real Estate" = "-50%", "Cash" = "+45%@Real Estate"},
 ]
 ```
 
@@ -461,8 +471,8 @@ retirement_end = 90
 "Real Estate" = 1000000
 
 rules = [
-  # Sell the family home and downsize; net $200K cash after buying the smaller place
-  {year = 2040, "Cash" = "+200000", "Real Estate" = "=500000"},
+  # Sell the family home and downsize; net 45% of current value after fees and replacement cost
+  {year = 2040, "Real Estate" = "-50%", "Cash" = "+45%@Real Estate"},
 ]
 
 [assets.growth]

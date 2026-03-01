@@ -15,8 +15,8 @@ retirement_end = 90
 "Real Estate" = 1000000
 
 rules = [
-  # Selling a house to downsize to a cheaper cost of living area
-  {year = 2040, "Cash" = "+200000", "Real Estate" = "=500000"},
+  # Selling a house to downsize to a cheaper cost of living area (5% sale fees)
+  {year = 2040, "Real Estate" = "-50%", "Cash" = "+45%@Real Estate"},
 ]
 
 [assets.growth]
