@@ -7,6 +7,7 @@ retirement, using historical S&P 500 data.
 import argparse
 import os
 import statistics
+import sys
 import tomllib
 
 from collections import defaultdict
@@ -39,7 +40,10 @@ def _load_scenario(name: str) -> dict:
   if not os.path.exists(path):
     raise FileNotFoundError(f'Scenario "{name}" not found: {path}')
   with open(path, 'rb') as f:
-    return tomllib.load(f)
+    try:
+      return tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+      raise ValueError(f'Scenario "{name}" has a TOML syntax error: {e}') from e
 
 
 def _resolve_tax_paths(country: str, state: str | None) -> tuple[str, str, str | None]:
@@ -176,7 +180,8 @@ def main():
     """Run a full simulation and return the server data dict, or None if no results."""
     try:
       ctx = _init_scenario(scenario_name, args.sp500_start, args.sp500_end)
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError) as e:
+      print(f'Error loading scenario "{scenario_name}": {e}', file=sys.stderr)
       return None
 
     sim = ctx['sim']

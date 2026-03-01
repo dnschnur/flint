@@ -818,7 +818,12 @@ async function triggerRun() {
  * Fetch simulation data from /data, set up controls, and render the initial overview.
  */
 async function init() {
-  appData = await fetch('/data').then(response => response.json());
+  try {
+    appData = await fetch('/data').then(response => response.json());
+  } catch (e) {
+    document.getElementById('run-error').textContent = 'Failed to load simulation data. Is the server running?';
+    return;
+  }
 
   const startInput = document.getElementById('input-retirement-age');
   startInput.value = appData.scenario.default_retirement_age;
