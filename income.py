@@ -57,14 +57,22 @@ class Income:
       return other_income
     return self._project_job_income(year) + other_income
 
-  def _project_job_income(self, year: int) -> float:
-    """Returns the projected job income for the given year."""
-    if year <= self.base_year:
-      return self._job_income
+  def _project(self, base_amount: float, rules: dict[int, Rule], year: int) -> float:
+    """Returns a projected income amount for the given year.
 
-    amount = self._job_income
+    Applies rules and the default growth rate year-by-year from the base year.
+
+    Args:
+      base_amount: The base-year income amount.
+      rules: Dict mapping years to rules for this income type.
+      year: The target year.
+    """
+    if year <= self.base_year:
+      return base_amount
+
+    amount = base_amount
     for i in range(self.base_year + 1, year + 1):
-      rule = self._rules_job.get(i)
+      rule = rules.get(i)
       if rule:
         amount = rule.apply(amount)
         if rule.apply_growth:
@@ -73,20 +81,11 @@ class Income:
         amount *= 1 + self._default_job_increase_rate
 
     return amount
+
+  def _project_job_income(self, year: int) -> float:
+    """Returns the projected job income for the given year."""
+    return self._project(self._job_income, self._rules_job, year)
 
   def _project_other_income(self, year: int) -> float:
     """Returns the projected other income for the given year."""
-    if year <= self.base_year:
-      return self._other_income
-
-    amount = self._other_income
-    for i in range(self.base_year + 1, year + 1):
-      rule = self._rules_other.get(i)
-      if rule:
-        amount = rule.apply(amount)
-        if rule.apply_growth:
-          amount *= 1 + self._default_job_increase_rate
-      else:
-        amount *= 1 + self._default_job_increase_rate
-
-    return amount
+    return self._project(self._other_income, self._rules_other, year)
