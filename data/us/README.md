@@ -9,6 +9,8 @@
 | `income_tax.csv` | Federal income tax brackets by year |
 | `capital_gains_tax.csv` | Federal long-term capital gains tax brackets by year |
 | `ca/income_tax.csv` | California state income tax brackets by year |
+| `rpp.csv` | BEA Regional Price Parities by state, 2008 to the present |
+| `build_rpp.py` | Script to regenerate `rpp.csv` from BEA |
 | `inflation.csv` | Composite per-category inflation dataset, 1913 to the present |
 | `build_inflation.py` | Script to regenerate `inflation.csv` from FRED and BLS |
 
@@ -33,6 +35,41 @@ table.
 
 To add brackets for another state, create `<state_code>/income_tax.csv` following the same
 format; Flint loads it automatically when `state = "<state_code>"` is set in a scenario.
+
+## `rpp.csv`
+
+BEA Regional Price Parities (RPPs) express price levels in each US state as a deviation from
+the national average. A value of `+10.72` for California's `All_Items` column means prices
+there are 10.72 percentage points above the national average for that year; `−13.05` for
+Mississippi means 13.05 points below.
+
+### Columns
+
+| Column | Description |
+|---|---|
+| `Year` | Calendar year (2008–present) |
+| `State` | Two-letter state abbreviation |
+| `All_Items` | All consumer goods and services |
+| `Goods` | Durable and non-durable consumer goods |
+| `Services_Housing` | Housing rents (tenant-occupied and owner-equivalent) |
+| `Services_Utilities` | Household utilities (electricity, gas, water) |
+| `Services_Other` | All services excluding housing and utilities |
+
+### Source
+
+BEA Regional Price Parities by State (table SARPP), downloaded as a bulk ZIP:
+
+```
+https://apps.bea.gov/regional/zip/SARPP.zip
+```
+
+No registration or API key is required. Regenerate by running:
+
+```bash
+python data/us/build_rpp.py
+```
+
+BEA updates RPP data annually (typically in Q1 for the prior year).
 
 ## `inflation.csv`
 
