@@ -1,11 +1,40 @@
-# data/us - US Historical Inflation Dataset
+# USA Reference Data
 
-## Purpose
+## Overview
 
-`inflation.csv` is a composite annual inflation dataset covering ~22 categories relevant to
-household budgeting. It is designed for use in Flint's per-category inflation modeling.
+| File | Description |
+|---|---|
+| `sp500.csv` | Historical S&P 500 monthly values from 1871 to the present |
+| `rmd.csv` | IRS Uniform Lifetime Table for Required Minimum Distributions |
+| `income_tax.csv` | Federal income tax brackets by year |
+| `capital_gains_tax.csv` | Federal long-term capital gains tax brackets by year |
+| `ca/income_tax.csv` | California state income tax brackets by year |
+| `inflation.csv` | Composite per-category inflation dataset, 1913 to the present |
+| `build_inflation.py` | Script to regenerate `inflation.csv` from FRED and BLS |
 
-## Output file: `inflation.csv`
+## `sp500.csv`
+
+Monthly S&P 500 index values used by the Monte Carlo engine to replay historical return
+sequences.
+
+## `rmd.csv`
+
+IRS Uniform Lifetime Table divisors by age, used to compute Required Minimum Distributions
+from 401K and IRA accounts once the account holder reaches age 73.
+
+## `income_tax.csv` and `capital_gains_tax.csv`
+
+Federal tax bracket tables with one set of thresholds per filing year.
+
+## `ca/income_tax.csv`
+
+California state income tax brackets, structured identically to the federal income bracket
+table.
+
+To add brackets for another state, create `<state_code>/income_tax.csv` following the same
+format; Flint loads it automatically when `state = "<state_code>"` is set in a scenario.
+
+## `inflation.csv`
 
 Rows cover **1913 through the most recent complete calendar year** (CPI data) or 1929 (BEA PCE
 data). Earlier years are backfilled synthetically where noted below.

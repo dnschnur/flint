@@ -49,8 +49,8 @@ def _load_scenario(name: str) -> dict:
 def _resolve_tax_paths(country: str, state: str | None) -> tuple[str, str, str | None]:
   """Resolve the paths to tax CSV files for a given country and optional state.
 
-  Files are read from data/tax/{country}/: income.csv and capital_gains.csv for federal taxes,
-  and income_{state}.csv for state income tax when a state is given.
+  Files are read from data/{country}/: income_tax.csv and capital_gains_tax.csv for federal
+  taxes, and {state}/income_tax.csv for state income tax when a state is given.
 
   Args:
     country: ISO country code in lowercase (e.g. 'us').
@@ -62,14 +62,14 @@ def _resolve_tax_paths(country: str, state: str | None) -> tuple[str, str, str |
   Raises:
     FileNotFoundError: If a state is given but no matching state tax file exists.
   """
-  base = os.path.join('data', 'tax', country)
+  base = os.path.join('data', country)
   state_path = None
   if state:
-    state_path = os.path.join(base, f'income_{state}.csv')
+    state_path = os.path.join(base, state, 'income_tax.csv')
     if not os.path.exists(state_path):
       raise FileNotFoundError(f'State tax file not found: {state_path}')
 
-  return os.path.join(base, 'income.csv'), os.path.join(base, 'capital_gains.csv'), state_path
+  return os.path.join(base, 'income_tax.csv'), os.path.join(base, 'capital_gains_tax.csv'), state_path
 
 
 def _init_scenario(name: str, sp500_start: int | None, sp500_end: int | None) -> dict:
@@ -106,7 +106,7 @@ def _init_scenario(name: str, sp500_start: int | None, sp500_end: int | None) ->
   assets = Assets(base_year, scenario.get('assets', {}))
   budget = Budget(base_year, scenario.get('budget', {}))
   income = Income(base_year, scenario.get('income', {}))
-  rmd = RMD('data/rmd.csv')
+  rmd = RMD('data/us/rmd.csv')
   tax = Tax(income_path, cg_path, state_path, data_year=base_year)
 
   sim = Simulation(
@@ -117,7 +117,7 @@ def _init_scenario(name: str, sp500_start: int | None, sp500_end: int | None) ->
     tax=tax,
     current_age=age,
     data_year=base_year,
-    sp500_path='data/sp500.csv',
+    sp500_path='data/us/sp500.csv',
     simulation_min_year=sp500_start,
     simulation_max_year=sp500_end,
   )
