@@ -392,7 +392,14 @@ h2 {
 .detail-table th.num,
 .detail-table td.num {
   text-align: right;
+  white-space: nowrap;
 }
+
+/* Fixed column widths sized for worst-case content.
+   Column order: (1) Category  (2) % YoY  (3) Share  (4) Value/Amount    */
+.detail-table th:nth-child(2) { width: 80px;  }  /* "+100.0%" = 7 chars  */
+.detail-table th:nth-child(3) { width: 70px;  }  /* "100.0%"  = 6 chars  */
+.detail-table th:nth-child(4) { width: 90px;  }  /* "$999.99M" = 8 chars */
 
 .detail-table td {
   padding: 5px 0;
