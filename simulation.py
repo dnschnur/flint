@@ -135,7 +135,7 @@ class Simulation:
             category, year + 1, value, context=current_assets)
 
       current_assets = new_assets
-      yield year, current_assets
+      yield year, current_assets, year_budget
 
   def run(
     self,
@@ -167,7 +167,7 @@ class Simulation:
     if starting_assets:
       pre_retirement_assets = starting_assets
     else:
-      *_, (_, pre_retirement_assets) = self.project_pre_retirement(start_year)
+      *_, (_, pre_retirement_assets, _) = self.project_pre_retirement(start_year)
 
     simulation_length = end_year - start_year
     max_historical_start = self.simulation_max_year - simulation_length
@@ -287,6 +287,11 @@ class Simulation:
           category.display_name: round(value)
           for category, value in current_assets.items()
           if value
+        },
+        'budget': {
+          category.display_name: round(amount)
+          for category, amount in current_budget.items()
+          if amount and category.asset_category is None
         },
       })
 

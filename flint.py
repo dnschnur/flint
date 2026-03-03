@@ -207,16 +207,21 @@ def main():
 
     starting_assets = None
     pre_retirement_history = []
-    for year, snapshot in sim.project_pre_retirement(start_year):
+    for year, assets_snapshot, budget_snapshot in sim.project_pre_retirement(start_year):
       pre_retirement_history.append({
         'year': year + 1,
         'assets': {
           category.display_name: round(value)
-          for category, value in snapshot.items()
+          for category, value in assets_snapshot.items()
           if value
         },
+        'budget': {
+          category.display_name: round(amount)
+          for category, amount in budget_snapshot.items()
+          if amount
+        },
       })
-      starting_assets = snapshot
+      starting_assets = assets_snapshot
 
     if starting_assets is None:
       current = defaultdict(float)

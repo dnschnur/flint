@@ -87,21 +87,40 @@
         </div>
       </section>
 
-      <section class="panel detail-table-panel">
+      <section class="panel detail-tables-panel">
         <div class="panel-header">
           <h2 id="detail-table-title">&mdash;</h2>
         </div>
-        <table class="detail-table">
-          <thead>
-            <tr>
-              <th>Asset</th>
-              <th class="num">Value</th>
-              <th class="num">Share</th>
-            </tr>
-          </thead>
-          <tbody id="detail-table-body"></tbody>
-          <tfoot id="detail-table-footer"></tfoot>
-        </table>
+        <div class="detail-tables-grid">
+          <div class="detail-column">
+            <div class="detail-column-label">Assets</div>
+            <table class="detail-table">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th class="num">Value</th>
+                  <th class="num">Share</th>
+                </tr>
+              </thead>
+              <tbody id="detail-table-body"></tbody>
+              <tfoot id="detail-table-footer"></tfoot>
+            </table>
+          </div>
+          <div class="detail-column">
+            <div class="detail-column-label">Budget</div>
+            <table class="detail-table">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th class="num">Amount</th>
+                  <th class="num">Share</th>
+                </tr>
+              </thead>
+              <tbody id="budget-table-body"></tbody>
+              <tfoot id="budget-table-footer"></tfoot>
+            </table>
+          </div>
+        </div>
       </section>
     </div>
 

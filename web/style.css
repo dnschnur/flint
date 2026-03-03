@@ -341,10 +341,35 @@ h2 {
   color: var(--muted);
 }
 
-/* ── Detail view assets table ────────────────────────── */
+/* ── Detail view tables ──────────────────────────────── */
 
-.detail-table-panel {
+.detail-tables-panel {
   margin-top: 16px;
+}
+
+.detail-tables-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  align-items: start;
+}
+
+.detail-column:first-child {
+  padding-right: 28px;
+  border-right: 1px solid var(--divider);
+}
+
+.detail-column + .detail-column {
+  padding-left: 28px;
+}
+
+.detail-column-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 10px;
 }
 
 .detail-table {
@@ -447,5 +472,18 @@ footer {
   .header-inner, main, .footer-inner {
     padding-left: 16px;
     padding-right: 16px;
+  }
+  .detail-tables-grid {
+    grid-template-columns: 1fr;
+  }
+  .detail-column:first-child {
+    padding-right: 0;
+    border-right: none;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .detail-column + .detail-column {
+    padding-left: 0;
+    padding-top: 20px;
   }
 }

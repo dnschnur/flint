@@ -645,10 +645,47 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
 }
 
 /**
- * Populate the asset breakdown table for a given year snapshot.
+ * Render a detail table's body and footer from a sorted list of [name, value] entries.
+ * Used by both the assets and budget tables.
  *
- * @param {{year: number, assets: Object}|undefined} snapshot
- * @param {number} historicalYear - Corresponding historical S&P 500 year.
+ * @param {HTMLElement} tbody - The <tbody> to populate.
+ * @param {HTMLElement} tfoot - The <tfoot> to populate.
+ * @param {Object} data - Raw name→value object; zero/missing values are filtered out.
+ * @param {function(HTMLElement, string): void} renderName - Fills the name <td> for each row.
+ */
+function renderDetailTable(tbody, tfoot, data, renderName) {
+  const entries = Object.entries(data)
+    .filter(([, value]) => value > 0)
+    .sort(([, a], [, b]) => b - a);
+  const total = entries.reduce((sum, [, value]) => sum + value, 0);
+
+  tbody.innerHTML = '';
+  for (const [name, value] of entries) {
+    const share = total > 0 ? (value / total * 100).toFixed(1) + '%' : '-';
+    const row = document.createElement('tr');
+    const nameCell = document.createElement('td');
+    renderName(nameCell, name);
+    row.appendChild(nameCell);
+    row.insertAdjacentHTML(
+        'beforeend', `<td class="num">${formatMoney(value)}</td><td class="num">${share}</td>`);
+    tbody.appendChild(row);
+  }
+
+  const footNameCell = document.createElement('td');
+  renderName(footNameCell, 'Total');
+  const footRow = document.createElement('tr');
+  footRow.appendChild(footNameCell);
+  footRow.insertAdjacentHTML(
+      'beforeend', `<td class="num">${formatMoney(total)}</td><td class="num">100%</td>`);
+  tfoot.innerHTML = '';
+  tfoot.appendChild(footRow);
+}
+
+/**
+ * Populate the assets and budget tables for a given year snapshot.
+ *
+ * @param {{year: number, assets: Object, budget: Object}|undefined} snapshot
+ * @param {number|null} historicalYear - Corresponding historical S&P 500 year, or null.
  */
 function updateDetailTable(snapshot, historicalYear) {
   const title = document.getElementById('detail-table-title');
@@ -660,38 +697,26 @@ function updateDetailTable(snapshot, historicalYear) {
     title.appendChild(basedOn);
   }
 
-  const body = document.getElementById('detail-table-body');
-  const footer = document.getElementById('detail-table-footer');
+  const assetBody   = document.getElementById('detail-table-body');
+  const assetFoot   = document.getElementById('detail-table-footer');
+  const budgetBody  = document.getElementById('budget-table-body');
+  const budgetFoot  = document.getElementById('budget-table-footer');
 
   if (!snapshot) {
-    body.innerHTML = '';
-    footer.innerHTML = '';
+    [assetBody, assetFoot, budgetBody, budgetFoot].forEach(el => el.innerHTML = '');
     return;
   }
 
-  const entries = Object.entries(snapshot.assets)
-    .filter(([, value]) => value > 0)
-    .sort(([, a], [, b]) => b - a);
+  renderDetailTable(assetBody, assetFoot, snapshot.assets, (cell, name) => {
+    const color = CATEGORY_COLORS[name] || '#8b949e';
+    cell.innerHTML =
+      `<div class="asset-name-cell">` +
+      `<span class="asset-swatch" style="background:${color}"></span>${name}</div>`;
+  });
 
-  const total = entries.reduce((sum, [, value]) => sum + value, 0);
-
-  body.innerHTML = '';
-  for (const [category, value] of entries) {
-    const color = CATEGORY_COLORS[category] || '#8b949e';
-    const value_percent = total > 0 ? (value / total * 100).toFixed(1) + '%' : '-';
-    const row = document.createElement('tr');
-    row.innerHTML =
-      `<td><div class="asset-name-cell">` +
-      `<span class="asset-swatch" style="background:${color}"></span>${category}</div></td>` +
-      `<td class="num">${formatMoney(value)}</td>` +
-      `<td class="num">${value_percent}</td>`;
-    body.appendChild(row);
-  }
-
-  footer.innerHTML =
-    `<tr><td><div class="asset-name-cell">Total</div></td>` +
-    `<td class="num">${formatMoney(total)}</td>` +
-    `<td class="num">100%</td></tr>`;
+  renderDetailTable(budgetBody, budgetFoot, snapshot.budget || {}, (cell, name) => {
+    cell.textContent = name;
+  });
 }
 
 /**
