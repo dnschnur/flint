@@ -346,7 +346,7 @@ function showDetailView(result) {
 
   drawLineChart(result.history, retirement.start_year, retirement.end_year, result.start_year);
   if (result.history.length > 0) {
-    updateDetailTable(result.history[0], result.start_year);
+    updateDetailTable(result.history[0], result.start_year, null);
   }
 }
 
@@ -371,7 +371,7 @@ function showPreRetirementView() {
   window.scrollTo({ top: 0, behavior: 'instant' });
 
   drawLineChart(pre_retirement_history, firstYear, retirement.start_year, null);
-  updateDetailTable(pre_retirement_history[0], null);
+  updateDetailTable(pre_retirement_history[0], null, null);
 }
 
 /**
@@ -618,15 +618,16 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
   overlay.addEventListener('mousemove', event => {
     const year = yearFromEvent(event);
     moveCursorTo(year);
-    updateDetailTable(snapshots.get(year), historicalYear(year));
+    updateDetailTable(snapshots.get(year), historicalYear(year), snapshots.get(year - 1));
   });
 
   overlay.addEventListener('mouseleave', () => {
     hideCursor();
     if (lockedYear != null) {
-      updateDetailTable(snapshots.get(lockedYear), historicalYear(lockedYear));
+      updateDetailTable(
+        snapshots.get(lockedYear), historicalYear(lockedYear), snapshots.get(lockedYear - 1));
     } else {
-      updateDetailTable(snapshots.get(startYear), historicalYear(startYear));
+      updateDetailTable(snapshots.get(startYear), historicalYear(startYear), null);
     }
   });
 
@@ -640,24 +641,45 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
       setLockedLine(year);
     }
     moveCursorTo(year);
-    updateDetailTable(snapshots.get(year), historicalYear(year));
+    updateDetailTable(snapshots.get(year), historicalYear(year), snapshots.get(year - 1));
   });
 }
 
 /**
- * Render a detail table's body and footer from a sorted list of [name, value] entries.
+ * Return a <td> HTML string for a year-over-year percentage change.
+ * Shows '—' when there is no previous value to compare against.
+ *
+ * @param {number} value - Current value.
+ * @param {number} prevValue - Previous year's value (0 or undefined means no comparison).
+ * @returns {string} HTML for a <td class="num ..."> cell.
+ */
+function yearOverYearComparisonCell(value, prevValue) {
+  if (!prevValue) return '<td class="num">\u2014</td>';
+  const pct = (value - prevValue) / prevValue * 100;
+  const cls = pct >= 0 ? 'positive' : 'negative';
+  return `<td class="num ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</td>`;
+}
+
+/**
+ * Render a detail table's body and footer from a raw data object.
  * Used by both the assets and budget tables.
  *
  * @param {HTMLElement} tbody - The <tbody> to populate.
  * @param {HTMLElement} tfoot - The <tfoot> to populate.
  * @param {Object} data - Raw name→value object; zero/missing values are filtered out.
+ * @param {Object|null} prevData - Previous year's data for YoY comparison, or null.
  * @param {function(HTMLElement, string): void} renderName - Fills the name <td> for each row.
  */
-function renderDetailTable(tbody, tfoot, data, renderName) {
+function renderDetailTable(tbody, tfoot, data, prevData, renderName) {
   const entries = Object.entries(data)
     .filter(([, value]) => value > 0)
     .sort(([, a], [, b]) => b - a);
   const total = entries.reduce((sum, [, value]) => sum + value, 0);
+  const prevTotal = prevData
+    ? Object.values(prevData)
+        .filter(value => value > 0)
+        .reduce((sum, value) => sum + value, 0)
+    : 0;
 
   tbody.innerHTML = '';
   for (const [name, value] of entries) {
@@ -666,8 +688,10 @@ function renderDetailTable(tbody, tfoot, data, renderName) {
     const nameCell = document.createElement('td');
     renderName(nameCell, name);
     row.appendChild(nameCell);
-    row.insertAdjacentHTML(
-        'beforeend', `<td class="num">${formatMoney(value)}</td><td class="num">${share}</td>`);
+    row.insertAdjacentHTML('beforeend',
+      `<td class="num">${formatMoney(value)}</td>` +
+      `<td class="num">${share}</td>` +
+      yearOverYearComparisonCell(value, prevData?.[name]));
     tbody.appendChild(row);
   }
 
@@ -675,8 +699,10 @@ function renderDetailTable(tbody, tfoot, data, renderName) {
   renderName(footNameCell, 'Total');
   const footRow = document.createElement('tr');
   footRow.appendChild(footNameCell);
-  footRow.insertAdjacentHTML(
-      'beforeend', `<td class="num">${formatMoney(total)}</td><td class="num">100%</td>`);
+  footRow.insertAdjacentHTML('beforeend',
+    `<td class="num">${formatMoney(total)}</td>` +
+    `<td class="num">100%</td>` +
+    yearOverYearComparisonCell(total, prevTotal));
   tfoot.innerHTML = '';
   tfoot.appendChild(footRow);
 }
@@ -686,8 +712,9 @@ function renderDetailTable(tbody, tfoot, data, renderName) {
  *
  * @param {{year: number, assets: Object, budget: Object}|undefined} snapshot
  * @param {number|null} historicalYear - Corresponding historical S&P 500 year, or null.
+ * @param {{assets: Object, budget: Object}|null|undefined} prevSnapshot - Previous year's snapshot for YoY.
  */
-function updateDetailTable(snapshot, historicalYear) {
+function updateDetailTable(snapshot, historicalYear, prevSnapshot) {
   const title = document.getElementById('detail-table-title');
   title.innerHTML = `${snapshot.year ?? '&mdash;'} `;
   if (historicalYear != null) {
@@ -707,16 +734,18 @@ function updateDetailTable(snapshot, historicalYear) {
     return;
   }
 
-  renderDetailTable(assetBody, assetFoot, snapshot.assets, (cell, name) => {
-    const color = CATEGORY_COLORS[name] || '#8b949e';
-    cell.innerHTML =
-      `<div class="asset-name-cell">` +
-      `<span class="asset-swatch" style="background:${color}"></span>${name}</div>`;
-  });
+  renderDetailTable(assetBody, assetFoot, snapshot.assets, prevSnapshot?.assets ?? null,
+    (cell, name) => {
+      const color = CATEGORY_COLORS[name] || '#8b949e';
+      cell.innerHTML =
+        `<div class="asset-name-cell">` +
+        `<span class="asset-swatch" style="background:${color}"></span>${name}</div>`;
+    });
 
-  renderDetailTable(budgetBody, budgetFoot, snapshot.budget || {}, (cell, name) => {
-    cell.textContent = name;
-  });
+  renderDetailTable(budgetBody, budgetFoot, snapshot.budget || {}, prevSnapshot?.budget ?? null,
+    (cell, name) => {
+      cell.textContent = name;
+    });
 }
 
 /**
