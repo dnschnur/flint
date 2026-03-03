@@ -689,9 +689,9 @@ function renderDetailTable(tbody, tfoot, data, prevData, renderName) {
     renderName(nameCell, name);
     row.appendChild(nameCell);
     row.insertAdjacentHTML('beforeend',
-      `<td class="num">${formatMoney(value)}</td>` +
+      yearOverYearComparisonCell(value, prevData?.[name]) +
       `<td class="num">${share}</td>` +
-      yearOverYearComparisonCell(value, prevData?.[name]));
+      `<td class="num">${formatMoney(value)}</td>`);
     tbody.appendChild(row);
   }
 
@@ -700,9 +700,9 @@ function renderDetailTable(tbody, tfoot, data, prevData, renderName) {
   const footRow = document.createElement('tr');
   footRow.appendChild(footNameCell);
   footRow.insertAdjacentHTML('beforeend',
-    `<td class="num">${formatMoney(total)}</td>` +
+    yearOverYearComparisonCell(total, prevTotal) +
     `<td class="num">100%</td>` +
-    yearOverYearComparisonCell(total, prevTotal));
+    `<td class="num">${formatMoney(total)}</td>`);
   tfoot.innerHTML = '';
   tfoot.appendChild(footRow);
 }
