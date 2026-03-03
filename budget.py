@@ -133,7 +133,7 @@ class Budget:
   for each category.
   """
 
-  def __init__(self, base_year: int, data: dict):
+  def __init__(self, base_year: int, data: dict, inflation=None):
     """Initialize from a scenario TOML [budget] data dict.
 
     Args:
@@ -148,6 +148,8 @@ class Budget:
             'growth': sub-dict of per-category inflation rate overrides, where values are
                 percentages (e.g. 3 for 3%).
             'rules': list of per-year rule dicts.
+      inflation: Optional Inflation instance, providing inflation rates for each mapped category.
+          Explicit 'growth' overrides in the scenario config take precedence over inflation rates.
 
     Raises:
       ValueError: If any key does not match a known BudgetCategory.
@@ -183,6 +185,14 @@ class Budget:
 
     for key, value in data.get('growth', {}).items():
       self._inflation[_parse_budget_category(key)] = float(value) / 100.0
+
+    # Use historical averages for categories without an explicit override.
+    if inflation:
+      for category in BudgetCategory:
+        if category not in self._inflation:
+          average_rate = inflation.average_rate(category)
+          if average_rate is not None:
+            self._inflation[category] = average_rate
 
     for rule_entry in data.get('rules', []):
       year = int(rule_entry['year'])
@@ -231,6 +241,36 @@ class Budget:
       else:
         if rule := parse_rule(value):
           self._rules[BudgetCategory.EMPLOYER_401K_MATCH][year] = rule
+
+  def advance(
+    self,
+    category: BudgetCategory,
+    year: int,
+    amount: float,
+    inflation: float | None = None,
+  ) -> float:
+    """Advance a budget amount by one year, applying any rule at that year and an inflation rate.
+
+    Args:
+      category: The budget category.
+      year: The target year (the year being stepped into, i.e. previous_year + 1).
+      amount: The budget amount at the previous year.
+      inflation: Inflation rate to apply if growth is not suppressed by a rule. Defaults to the
+          category's configured rate (from the scenario's 'growth' overrides or the data-driven
+          average from Inflation, falling back to the category's hardcoded default).
+
+    Returns:
+      The budget amount for the given category in the given year.
+    """
+    if inflation is None:
+      inflation = self._inflation.get(category, category.inflation)
+    if rule := self._rules.get(category, {}).get(year):
+      amount = rule.apply(amount)
+      if rule.apply_growth:
+        amount *= 1 + inflation
+    else:
+      amount *= 1 + inflation
+    return amount
 
   @cache
   def get_category(self, category: BudgetCategory, year: int) -> float:
@@ -299,16 +339,7 @@ class Budget:
       The projected budget amount for the category in the given year.
     """
     amount = self._amounts.get(category, 0.0)
-    category_rules = self._rules.get(category, {})
     inflation = self._inflation.get(category, category.inflation)
-
     for i in range(self.base_year + 1, year + 1):
-      rule = category_rules.get(i)
-      if rule:
-        amount = rule.apply(amount)
-        if rule.apply_growth:
-          amount *= 1 + inflation
-      else:
-        amount *= 1 + inflation
-
+      amount = self.advance(category, i, amount, inflation)
     return amount

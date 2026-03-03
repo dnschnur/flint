@@ -18,6 +18,7 @@ import server
 from assets import Assets, AssetCategory
 from budget import Budget
 from income import Income
+from inflation import Inflation
 from rmd import RMD
 from server import SimulationData
 from simulation import Simulation
@@ -103,8 +104,13 @@ def _init_scenario(name: str, sp500_start: int | None, sp500_end: int | None) ->
 
   income_path, cg_path, state_path = _resolve_tax_paths(country, state)
 
+  inflation = None
+  inflation_path = os.path.join('data', country, 'inflation.csv')
+  if os.path.exists(inflation_path):
+    inflation = Inflation(inflation_path)
+
   assets = Assets(base_year, scenario.get('assets', {}))
-  budget = Budget(base_year, scenario.get('budget', {}))
+  budget = Budget(base_year, scenario.get('budget', {}), inflation)
   income = Income(base_year, scenario.get('income', {}))
   rmd = RMD('data/us/rmd.csv')
   tax = Tax(income_path, cg_path, state_path, data_year=base_year)
@@ -120,6 +126,7 @@ def _init_scenario(name: str, sp500_start: int | None, sp500_end: int | None) ->
     sp500_path='data/us/sp500.csv',
     simulation_min_year=sp500_start,
     simulation_max_year=sp500_end,
+    inflation=inflation,
   )
 
   return {

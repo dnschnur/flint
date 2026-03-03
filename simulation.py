@@ -14,6 +14,7 @@ from typing import TypeAlias
 from assets import Assets, AssetCategory, AssetDict, AssetDefaultDict
 from budget import Budget, BudgetCategory, BudgetDict
 from income import Income
+from inflation import Inflation
 from rmd import RMD
 from strategy import Strategy
 from tax import Tax
@@ -50,7 +51,8 @@ class Simulation:
     data_year: int,
     sp500_path: str,
     simulation_min_year: int | None = None,
-    simulation_max_year: int | None = None
+    simulation_max_year: int | None = None,
+    inflation: Inflation | None = None,
   ):
     """Initialize the simulation.
 
@@ -67,6 +69,9 @@ class Simulation:
       sp500_path: Path to CSV file with historical S&P 500 data.
       simulation_min_year: Minimum year for simulation data, or None for the earliest available.
       simulation_max_year: Maximum year for simulation data, or None for the latest available.
+      inflation: Optional historical inflation data. When provided, the Monte Carlo simulation uses
+          year-specific historical inflation rates (matched to the S&P 500 replay period) rather
+          than the budget category's fixed average rates, improving accuracy of the scenario.
     """
     self.assets = assets
     self.budget = budget
@@ -74,6 +79,7 @@ class Simulation:
     self.strategy = Strategy(rmd=rmd, tax=tax)
     self.current_age = current_age
     self.data_year = data_year
+    self.inflation = inflation
 
     self._sp500_data = self._load_sp500(sp500_path)
 
@@ -266,6 +272,11 @@ class Simulation:
     current_historical_year = historical_start_year
     stock_basis = self._compute_stock_basis(start_year, current_assets.get(AssetCategory.STOCKS, 0.0))
 
+    # Track budget amounts directly so each year's budget grows by the actual historical
+    # inflation rate rather than the long-run average. Rules still fire at their scheduled
+    # calendar years via Budget.advance.
+    current_budget = self._get_year_budget(start_year)
+
     for year in range(start_year, end_year + 1):
       age = self.current_age + (year - self.data_year)
 
@@ -284,10 +295,9 @@ class Simulation:
       cg_fraction = max(0.0, 1.0 - stock_basis / old_stocks) if old_stocks > 0 else 0.0
 
       year_income = self.income.get(year, retired=True)
-      year_budget = self._get_year_budget(year)
 
       current_assets = self.strategy.apply(
-        year, current_assets, year_income, year_budget, retired=True, age=age,
+        year, current_assets, year_income, current_budget, retired=True, age=age,
         eligible_529=self.budget.get_529_eligible_fraction(year),
         cg_fraction=cg_fraction,
         employer_match_fraction=self.budget.get_employer_match_fraction(year)
@@ -302,6 +312,15 @@ class Simulation:
       if year < end_year:  # Don't grow in the final year
         next_historical_year = current_historical_year + 1
         sp500_return = self._get_sp500_return(current_historical_year, next_historical_year)
+
+        # Advance each budget category by one year using the matched historical inflation rate.
+        current_budget = {
+          category: self.budget.advance(
+            category, year + 1, amount,
+            self.inflation.rate(category, current_historical_year) if self.inflation else None
+          )
+          for category, amount in current_budget.items()
+        }
 
         new_assets = {}
         for category, value in current_assets.items():
