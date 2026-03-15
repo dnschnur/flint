@@ -185,11 +185,6 @@ class Assets:
       return self._project_category(category, year, retirement_year)
     return self._amounts.get(category, 0.0)
 
-  @cache
-  def get_total(self, year: int, retirement_year) -> float:
-    """Returns the total assets across all categories for a specific year."""
-    return sum(self.get_category(category, year, retirement_year) for category in self._amounts)
-
   def apply_year(
     self, category: AssetCategory, year: int, amount: float, retirement_year: int,
     growth_rate: float | None = None,

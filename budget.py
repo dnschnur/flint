@@ -296,11 +296,6 @@ class Budget:
     return 0.0
 
   @cache
-  def get_total(self, year: int) -> float:
-    """Returns the total budget across all categories for a specific year."""
-    return sum(self.get_category(category, year) for category in self._amounts)
-
-  @cache
   def get_529_eligible_fraction(self, year: int) -> float:
     """Returns the fraction of the School budget eligible to be paid from a 529 plan.
 
