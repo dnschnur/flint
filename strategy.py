@@ -429,6 +429,13 @@ class Strategy:
         # Any remaining shortfall comes from Cash (may go negative).
         remaining = -shortfall
 
+    # Any post-retirement surplus goes 50% to Stocks, and the rest to Cash.
+    # A future improvement might be to allow defining the post-retirement reinvestment mix.
+    if retired and remaining > 0:
+      reinvestment = remaining / 2
+      new_assets[AssetCategory.STOCKS] += reinvestment
+      remaining -= reinvestment
+
     new_assets[AssetCategory.CASH] += remaining
 
     return new_assets

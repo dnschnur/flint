@@ -79,7 +79,7 @@ class BudgetCategory(Enum):
 
   @cached_property
   def is_pre_tax_contribution(self) -> bool:
-    """True for budget items that are pre-tax contributions reducing taxable income."""
+    """True for budget categories that are pre-tax contributions reducing taxable income."""
     return self in {
       BudgetCategory.PRE_TAX_401K,
       BudgetCategory.IRA,
@@ -87,7 +87,7 @@ class BudgetCategory(Enum):
 
   @cached_property
   def is_retirement_contribution(self) -> bool:
-    """True for budget items that represent contributions which stop at retirement."""
+    """True for budget categories that represent contributions which stop at retirement."""
     return self in {
       BudgetCategory.PRE_TAX_401K,
       BudgetCategory.AFTER_TAX_401K,
@@ -96,6 +96,8 @@ class BudgetCategory(Enum):
       BudgetCategory.ROTH_IRA,
       BudgetCategory.PLAN_529,
       BudgetCategory.HSA,
+      BudgetCategory.STOCKS,
+      BudgetCategory.BONDS,
       BudgetCategory.EMPLOYER_401K_MATCH,
     }
 
