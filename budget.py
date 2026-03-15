@@ -8,7 +8,7 @@ from functools import cache, cached_property
 from typing import TypeAlias
 
 from assets import AssetCategory
-from rules import Rule, parse_rule
+from rules import Rule, parse_rule, RETIREMENT_RULE_YEAR
 
 
 class BudgetCategory(Enum):
@@ -147,7 +147,9 @@ class Budget:
                 (e.g. '50%'), a rule string (e.g. '=60000'), or a plain dollar amount.
             'growth': sub-dict of per-category inflation rate overrides, where values are
                 percentages (e.g. 3 for 3%).
-            'rules': list of per-year rule dicts.
+            'rules': list of per-year rule dicts, each with a 'year' key (int or "retirement").
+                Rules with year = "retirement" fire at whatever calendar year retirement begins,
+                resolved automatically by the simulation loops.
       inflation: Optional Inflation instance, providing inflation rates for each mapped category.
           Explicit 'growth' overrides in the scenario config take precedence over inflation rates.
 
@@ -195,13 +197,17 @@ class Budget:
             self._inflation[category] = average_rate
 
     for rule_entry in data.get('rules', []):
-      year = int(rule_entry['year'])
+      year = Rule.parse_year(rule_entry['year'])
       for key, value in rule_entry.items():
         if key == 'year':
           continue
         if key in ('529 Eligible', '529_eligible'):
+          if year == RETIREMENT_RULE_YEAR:
+            raise ValueError('"529 Eligible" does not support year = "retirement"')
           self._529_eligible[year] = _parse_fraction(value)
         elif key in ('Employer 401K Match', 'employer_401k_match'):
+          if year == RETIREMENT_RULE_YEAR:
+            raise ValueError('"Employer 401K Match" does not support year = "retirement"')
           self._load_employer_match(year, value, update_amounts=False)
         else:
           category = _parse_budget_category(key)
@@ -247,7 +253,8 @@ class Budget:
     category: BudgetCategory,
     year: int,
     amount: float,
-    inflation: float | None = None,
+    inflation: float | None,
+    retirement_year: int,
   ) -> float:
     """Advance a budget amount by one year, applying any rule at that year and an inflation rate.
 
@@ -258,13 +265,20 @@ class Budget:
       inflation: Inflation rate to apply if growth is not suppressed by a rule. Defaults to the
           category's configured rate (from the scenario's 'growth' overrides or the data-driven
           average from Inflation, falling back to the category's hardcoded default).
+      retirement_year: The retirement start year.
 
     Returns:
       The budget amount for the given category in the given year.
     """
     if inflation is None:
       inflation = self._inflation.get(category, category.inflation)
-    if rule := self._rules.get(category, {}).get(year):
+    category_rules = self._rules.get(category, {})
+
+    # Apply at-retirement rules first. These never apply growth.
+    if year == retirement_year and (rule := category_rules.get(RETIREMENT_RULE_YEAR)):
+      amount = rule.apply(amount)
+
+    if rule := category_rules.get(year):
       amount = rule.apply(amount)
       if rule.apply_growth:
         amount *= 1 + inflation
@@ -273,12 +287,12 @@ class Budget:
     return amount
 
   @cache
-  def get_category(self, category: BudgetCategory, year: int) -> float:
+  def get_category(self, category: BudgetCategory, year: int, retirement_year: int) -> float:
     """Returns the amount for a category in a given year, defaulting to zero."""
     if year == self.base_year:
       return self._amounts.get(category, 0.0)
     if year > self.base_year:
-      return self._project_category(category, year)
+      return self._project_category(category, year, retirement_year)
     return 0.0
 
   @cache
@@ -325,7 +339,7 @@ class Budget:
       return 0.0
     return data[max(eligible_years)]
 
-  def _project_category(self, category: BudgetCategory, year: int) -> float:
+  def _project_category(self, category: BudgetCategory, year: int, retirement_year: int) -> float:
     """Returns the projected budget for a category in a future year.
 
     Applies rules in order from the base year to the target year. Default inflation is
@@ -334,6 +348,7 @@ class Budget:
     Args:
       category: The budget category to project.
       year: The target year for the projection.
+      retirement_year: The retirement start year.
 
     Returns:
       The projected budget amount for the category in the given year.
@@ -341,5 +356,5 @@ class Budget:
     amount = self._amounts.get(category, 0.0)
     inflation = self._inflation.get(category, category.inflation)
     for i in range(self.base_year + 1, year + 1):
-      amount = self.advance(category, i, amount, inflation)
+      amount = self.advance(category, i, amount, inflation, retirement_year)
     return amount

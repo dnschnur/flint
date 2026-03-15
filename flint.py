@@ -226,7 +226,7 @@ def main():
     if starting_assets is None:
       current = defaultdict(float)
       for category in AssetCategory:
-        value = sim.assets.get_category(category, base_year)
+        value = sim.assets.get_category(category, base_year, retirement_year=start_year)
         if value:
           current[category] = value
       starting_assets = current

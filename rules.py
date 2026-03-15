@@ -50,6 +50,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
   from assets import AssetCategory, AssetDict
 
+# Sentinel year used to store rules with year = "retirement" in the regular _rules dicts.
+RETIREMENT_RULE_YEAR: int = 0
+
 
 class Rule(ABC):
   """Base class for projection rules.
@@ -70,6 +73,13 @@ class Rule(ABC):
       context: Optional asset snapshot keyed by AssetCategory, holding pre-rule values for the
         current year. Used by cross-category rules; ignored by all others.
     """
+
+  @staticmethod
+  def parse_year(value: str | int) -> int:
+    """Returns the integer value of a given rule year, taking into account 'retirement' rules."""
+    if isinstance(value, str) and value.strip().lower() == 'retirement':
+      return RETIREMENT_RULE_YEAR
+    return int(value)
 
 
 class SetAmount(Rule):

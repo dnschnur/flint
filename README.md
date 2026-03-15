@@ -321,7 +321,7 @@ entries.
 Cross-category rules (`@Category`) reference another asset's value as it stands *before* any rules
 for that year are applied. This makes it straightforward to model transactions where one asset's
 proceeds flow into another: the source amount is always the pre-transaction market value, regardless
-of what other rules fire in the same year. The category name must match an account type exactly
+of what other rules apply to the same year. The category name must match an account type exactly
 (e.g. `"Real Estate"`, `"401K"`).
 
 After a rule is applied, Flint may also apply the category's default growth or inflation rate for
@@ -340,6 +340,27 @@ Override the default by appending `!` (suppress growth) or `+` (force growth):
 "Housing" = "=24000+"    # Set to $24,000; then inflate at the Housing rate
 "-50000!"                # Subtract $50,000; suppress growth this year
 ```
+
+### Retirement-relative rules
+
+The `year` key in a rule entry is normally a calendar year integer. Use `"retirement"` as a
+special value to make the rule apply to whatever calendar year retirement begins, as determined
+by the **Retire at age** control in the UI (or the `retirement_age` field in the scenario file):
+
+```toml
+[budget]
+rules = [
+  # Switch to individual health insurance the year retirement begins
+  {year = "retirement", "Health" = "+400%", "Food" = "+10%"},
+]
+```
+
+`"retirement"` rules work in assets, budget, and income. They are applied at the same calendar
+year as other rules with an explicit year matching retirement, so they can be combined freely.
+
+This is useful for events that are tied to the retirement date itself rather than to a fixed
+calendar year — for example, changes in spending driven by leaving the workforce, or a home sale
+timed to coincide with retirement.
 
 ### Sample rules
 

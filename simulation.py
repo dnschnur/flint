@@ -87,12 +87,12 @@ class Simulation:
     self.simulation_min_year = simulation_min_year or available_years[0]
     self.simulation_max_year = simulation_max_year or available_years[-1]
 
-  def _get_year_budget(self, year: int) -> BudgetDict:
+  def _get_year_budget(self, year: int, retirement_year: int) -> BudgetDict:
     """Returns budget amounts for the given year, omitting zero or absent categories."""
     return {
       category: amount
       for category in BudgetCategory
-      if (amount := self.budget.get_category(category, year))
+      if (amount := self.budget.get_category(category, year, retirement_year))
     }
 
   def project_pre_retirement(self, retirement_year: int):
@@ -112,7 +112,7 @@ class Simulation:
     # Get initial asset values from the data year
     current_assets = {}
     for category in AssetCategory:
-      value = self.assets.get_category(category, self.data_year)
+      value = self.assets.get_category(category, self.data_year, retirement_year)
       if value > 0:
         current_assets[category] = value
 
@@ -120,8 +120,8 @@ class Simulation:
     for year in range(self.data_year, retirement_year):
       age = self.current_age + (year - self.data_year)
 
-      year_income = self.income.get(year, retired=False)
-      year_budget = self._get_year_budget(year)
+      year_income = self.income.get(year, retirement_year)
+      year_budget = self._get_year_budget(year, retirement_year)
 
       current_assets = self.strategy.apply(
         year, current_assets, year_income, year_budget, retired=False, age=age,
@@ -132,7 +132,7 @@ class Simulation:
       new_assets = defaultdict(float)
       for category, value in current_assets.items():
         new_assets[category] = self.assets.apply_year(
-            category, year + 1, value, context=current_assets)
+            category, year + 1, value, retirement_year, context=current_assets)
 
       current_assets = new_assets
       yield year, current_assets, year_budget
@@ -238,12 +238,13 @@ class Simulation:
     Returns:
       Estimated cost basis, clamped to [0, starting_stocks].
     """
-    initial_stocks = self.assets.get_category(AssetCategory.STOCKS, self.data_year)
+    initial_stocks = self.assets.get_category(
+        AssetCategory.STOCKS, self.data_year, retirement_year=start_year)
     basis = initial_stocks * (1.0 - self.assets.base_cg_fraction)
 
     # Stock budget contributions during pre-retirement are pure cost basis.
     for year in range(self.data_year, start_year):
-      basis += self.budget.get_category(BudgetCategory.STOCKS, year)
+      basis += self.budget.get_category(BudgetCategory.STOCKS, year, retirement_year=start_year)
 
     return max(0.0, min(basis, starting_stocks))
 
@@ -275,7 +276,7 @@ class Simulation:
     # Track budget amounts directly so each year's budget grows by the actual historical
     # inflation rate rather than the long-run average. Rules still fire at their scheduled
     # calendar years via Budget.advance.
-    current_budget = self._get_year_budget(start_year)
+    current_budget = self._get_year_budget(start_year, retirement_year=start_year)
 
     for year in range(start_year, end_year + 1):
       age = self.current_age + (year - self.data_year)
@@ -299,7 +300,7 @@ class Simulation:
       old_stocks = current_assets.get(AssetCategory.STOCKS, 0.0)
       cg_fraction = max(0.0, 1.0 - stock_basis / old_stocks) if old_stocks > 0 else 0.0
 
-      year_income = self.income.get(year, retired=True)
+      year_income = self.income.get(year, retirement_year=start_year)
 
       current_assets = self.strategy.apply(
         year, current_assets, year_income, current_budget, retired=True, age=age,
@@ -322,7 +323,8 @@ class Simulation:
         current_budget = {
           category: self.budget.advance(
             category, year + 1, amount,
-            self.inflation.rate(category, current_historical_year) if self.inflation else None
+            self.inflation.rate(category, current_historical_year) if self.inflation else None,
+            retirement_year=start_year
           )
           for category, amount in current_budget.items()
         }
@@ -331,7 +333,8 @@ class Simulation:
         for category, value in current_assets.items():
           growth_rate = sp500_return if category.tracks_sp500 else None
           new_assets[category] = self.assets.apply_year(
-              category, year + 1, value, growth_rate, context=current_assets)
+              category, year + 1, value, retirement_year=start_year,
+              growth_rate=growth_rate, context=current_assets)
 
         current_assets = new_assets
         current_historical_year = next_historical_year

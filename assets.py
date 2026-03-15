@@ -7,7 +7,7 @@ from enum import Enum
 from functools import cache, cached_property
 from typing import TypeAlias
 
-from rules import Rule, parse_rule
+from rules import Rule, parse_rule, RETIREMENT_RULE_YEAR
 
 
 class AssetCategory(Enum):
@@ -130,8 +130,10 @@ class Assets:
       data: Dict from the [assets] TOML section. Top-level keys are asset category names
           (either enum member names like 'PLAN_401K' or display names like '401K'), with numeric
           values for the base-year balance. Reserved keys:
-            'rules': list of per-year rule dicts, each with a 'year' int key and category keys
-                whose string values are rule strings (e.g. '+900000', '=2300000').
+            'rules': list of per-year rule dicts, each with a 'year' key (int or "retirement")
+                and category keys whose string values are rule strings (e.g. '+900000',
+                '=2300000'). Rules with year = "retirement" fire at whatever calendar year
+                retirement begins, resolved automatically by the simulation loops.
             'growth': sub-dict of per-category growth rate overrides, where values are
                 percentages (e.g. 0 for 0%, 7 for 7%).
             'Capital Gains Percentage': percentage of the base-year Stocks balance that is
@@ -169,7 +171,7 @@ class Assets:
       self._growth[_parse_asset_category(key)] = float(value) / 100.0
 
     for rule_entry in data.get('rules', []):
-      year = int(rule_entry['year'])
+      year = Rule.parse_year(rule_entry['year'])
       for key, value in rule_entry.items():
         if key == 'year':
           continue
@@ -177,19 +179,19 @@ class Assets:
           self._rules[_parse_asset_category(key)][year] = rule
 
   @cache
-  def get_category(self, category: AssetCategory, year: int) -> float:
+  def get_category(self, category: AssetCategory, year: int, retirement_year: int) -> float:
     """Returns the amount for a category in a given year, defaulting to zero."""
     if year > self.base_year:
-      return self._project_category(category, year)
+      return self._project_category(category, year, retirement_year)
     return self._amounts.get(category, 0.0)
 
   @cache
-  def get_total(self, year: int) -> float:
+  def get_total(self, year: int, retirement_year) -> float:
     """Returns the total assets across all categories for a specific year."""
-    return sum(self.get_category(category, year) for category in self._amounts)
+    return sum(self.get_category(category, year, retirement_year) for category in self._amounts)
 
   def apply_year(
-    self, category: AssetCategory, year: int, amount: float,
+    self, category: AssetCategory, year: int, amount: float, retirement_year: int,
     growth_rate: float | None = None,
     context: AssetDict | None = None,
   ) -> float:
@@ -209,13 +211,19 @@ class Assets:
       context: Optional asset snapshot keyed by AssetCategory, holding pre-rule balances for this
           year. Passed to rule.apply() to support cross-category rules (e.g. "+45%@Real Estate").
           When None, cross-category rules have no effect.
+      retirement_year: The retirement start year.
 
     Returns:
       The updated balance after applying any rule and growth.
     """
     rate = growth_rate if growth_rate is not None else self._growth.get(category, category.growth)
-    rule = self._rules.get(category, {}).get(year)
-    if rule:
+    category_rules = self._rules.get(category, {})
+
+    # Apply at-retirement rules first. These never apply growth.
+    if year == retirement_year and (rule := category_rules.get(RETIREMENT_RULE_YEAR)):
+      amount = rule.apply(amount, context)
+
+    if rule := category_rules.get(year):
       amount = rule.apply(amount, context)
       if rule.apply_growth:
         amount *= 1 + rate
@@ -223,7 +231,7 @@ class Assets:
       amount *= 1 + rate
     return amount
 
-  def _project_category(self, category: AssetCategory, year: int) -> float:
+  def _project_category(self, category: AssetCategory, year: int, retirement_year: int) -> float:
     """Returns the projected assets for a category in a future year.
 
     Applies rules in order from the base year to the target year, delegating each year's step
@@ -232,11 +240,12 @@ class Assets:
     Args:
       category: The asset category to project.
       year: The target year for the projection.
+      retirement_year: The retirement start year.
 
     Returns:
       The projected asset amount for the category in the given year.
     """
     amount = self._amounts.get(category, 0.0)
     for i in range(self.base_year + 1, year + 1):
-      amount = self.apply_year(category, i, amount)
+      amount = self.apply_year(category, i, amount, retirement_year)
     return amount
