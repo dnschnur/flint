@@ -52,7 +52,6 @@ class Income:
 
     Args:
       year: The year to get income for.
-      retired: If True, only return other income (no job income).
       retirement_year: The retirement start year.
     """
     other_income = self._project_other_income(year, retirement_year)
