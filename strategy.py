@@ -272,7 +272,8 @@ class Strategy:
     # Process remaining budget items (expenses and after-tax contributions).
     for category, amount in budget.items():
       if category == BudgetCategory.EMPLOYER_401K_MATCH:
-        new_assets[AssetCategory.PLAN_401K] += amount
+        if not retired:
+          new_assets[AssetCategory.PLAN_401K] += amount
         continue
       if category.is_pre_tax_contribution:
         continue  # Already handled previously
