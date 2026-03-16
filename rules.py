@@ -32,7 +32,7 @@ Examples:
 Cross-category rules
 --------------------
 The @Category suffix references another asset category by its display name (e.g. "Real Estate").
-The base value is taken from a context dict passed to apply() — a snapshot of all asset values
+The base value is taken from a context dict passed to apply() - a snapshot of all asset values
 taken *before* any rules for that year are applied. This means:
 
   {year = 2040, "Real Estate" = "-50%", "Cash" = "+45%@Real Estate"}
@@ -76,9 +76,28 @@ class Rule(ABC):
 
   @staticmethod
   def parse_year(value: str | int) -> int:
-    """Returns the integer value of a given rule year, taking into account 'retirement' rules."""
-    if isinstance(value, str) and value.strip().lower() == 'retirement':
+    """Returns the integer year key for a rule year spec.
+
+    - Integer or plain integer string: returned as-is (calendar year).
+    - "retirement": returns RETIREMENT_RULE_YEAR (0), fires at the retirement year.
+    - "retirement+N": returns N, fires N years after retirement.
+    - "retirement-N": returns -N, fires N years before retirement.
+
+    Raises:
+      ValueError: If a retirement-relative offset cannot be parsed.
+    """
+    if isinstance(value, int):
+      return value
+
+    value = value.strip().lower()
+    if value == 'retirement':
       return RETIREMENT_RULE_YEAR
+    if value.startswith('retirement'):
+      rest = value[len('retirement'):]
+      try:
+        return int(rest)
+      except ValueError:
+        raise ValueError(f'Invalid retirement year spec: {value!r}')
     return int(value)
 
 
@@ -211,3 +230,34 @@ def parse_rule(value: str | int | float) -> Rule | None:
     rule.apply_growth = growth_override
 
   return rule
+
+
+# Retirement-relative rule keys are small integers in [-_RETIREMENT_OFFSET_MAX, _RETIREMENT_OFFSET_MAX].
+# Real calendar years (e.g. 1871–2200) are always >> _RETIREMENT_OFFSET_MAX, so there is no collision.
+_RETIREMENT_OFFSET_MAX: int = 200
+
+
+def is_retirement_sentinel(year: int) -> bool:
+  """True if year is a retirement-relative sentinel rather than a real calendar year."""
+  return abs(year) <= _RETIREMENT_OFFSET_MAX
+
+
+def get_retirement_rule(rules: dict, year: int, retirement_year: int) -> 'Rule | None':
+  """Returns the retirement-relative rule that fires in the given year, if any.
+
+  Retirement-relative rules are stored with offset keys: 0 for "retirement",
+  N for "retirement+N", and -N for "retirement-N". These sentinels are always
+  small numbers that cannot collide with real calendar years.
+
+  Args:
+    rules: Dict mapping year keys to Rules.
+    year: The current simulation year.
+    retirement_year: The retirement start year.
+
+  Returns:
+    The Rule to apply, or None if no retirement-relative rule fires this year.
+  """
+  offset = year - retirement_year
+  if abs(offset) <= _RETIREMENT_OFFSET_MAX:
+    return rules.get(offset)
+  return None

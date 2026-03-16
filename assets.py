@@ -7,7 +7,7 @@ from enum import Enum
 from functools import cache, cached_property
 from typing import TypeAlias
 
-from rules import Rule, parse_rule, RETIREMENT_RULE_YEAR
+from rules import Rule, parse_rule, get_retirement_rule
 
 
 class AssetCategory(Enum):
@@ -130,10 +130,10 @@ class Assets:
       data: Dict from the [assets] TOML section. Top-level keys are asset category names
           (either enum member names like 'PLAN_401K' or display names like '401K'), with numeric
           values for the base-year balance. Reserved keys:
-            'rules': list of per-year rule dicts, each with a 'year' key (int or "retirement")
-                and category keys whose string values are rule strings (e.g. '+900000',
-                '=2300000'). Rules with year = "retirement" fire at whatever calendar year
-                retirement begins, resolved automatically by the simulation loops.
+            'rules': list of per-year rule dicts, each with a 'year' key (int, "retirement",
+                "retirement+N", or "retirement-N") and category keys whose string values are
+                rule strings (e.g. '+900000', '=2300000'). Retirement-relative rules apply to the
+                year with the corresponding offset from retirement.
             'growth': sub-dict of per-category growth rate overrides, where values are
                 percentages (e.g. 0 for 0%, 7 for 7%).
             'Capital Gains Percentage': percentage of the base-year Stocks balance that is
@@ -215,7 +215,7 @@ class Assets:
     category_rules = self._rules.get(category, {})
 
     # Apply at-retirement rules first. These never apply growth.
-    if year == retirement_year and (rule := category_rules.get(RETIREMENT_RULE_YEAR)):
+    if rule := get_retirement_rule(category_rules, year, retirement_year):
       amount = rule.apply(amount, context)
 
     if rule := category_rules.get(year):

@@ -9,7 +9,7 @@ Each type has a base-year value and optional projection rules.
 
 from functools import cache
 
-from rules import Rule, parse_rule, RETIREMENT_RULE_YEAR
+from rules import Rule, parse_rule, get_retirement_rule
 
 
 class Income:
@@ -22,9 +22,9 @@ class Income:
       base_year: The snapshot year for the base income amounts.
       data: Dict from the [income] TOML section. Recognized keys are 'Job Income' and
           'Other Income', with numeric values for the base-year amounts. An optional 'rules'
-          key contains a list of per-year rule dicts with a 'year' key (int or "retirement")
-          and the same income keys. Rules with year = "retirement" fire at whatever calendar
-          year retirement begins, resolved automatically by the simulation loops.
+          key contains a list of per-year rule dicts with a 'year' key (int, "retirement",
+          "retirement+N", or "retirement-N") and the same income keys. Retirement-relative
+          rules apply to the year with the corresponding offset from retirement.
       default_job_increase_rate: Annual job income increase rate (default 3%).
     """
     self.base_year = base_year
@@ -78,7 +78,7 @@ class Income:
     amount = base_amount
     for i in range(self.base_year + 1, year + 1):
       # Apply at-retirement rules first. These never apply growth.
-      if i == retirement_year and (rule := rules.get(RETIREMENT_RULE_YEAR)):
+      if rule := get_retirement_rule(rules, i, retirement_year):
         amount = rule.apply(amount)
 
       if rule := rules.get(i):

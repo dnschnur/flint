@@ -343,24 +343,36 @@ Override the default by appending `!` (suppress growth) or `+` (force growth):
 
 ### Retirement-relative rules
 
-The `year` key in a rule entry is normally a calendar year integer. Use `"retirement"` as a
-special value to make the rule apply to whatever calendar year retirement begins, as determined
-by the **Retire at age** control in the UI (or the `retirement_age` field in the scenario file):
+The `year` key in a rule entry is normally a calendar year integer. You can also write the year
+relative to whenever retirement begins, as determined by the **Retire at age** control in the UI
+(or the `retirement_age` field in the scenario file):
+
+| Year value | What year the rule applies to |
+|---|---|
+| `"retirement"` | The first year of retirement |
+| `"retirement+N"` | N years after retirement begins |
+| `"retirement-N"` | N years before retirement begins |
 
 ```toml
 [budget]
 rules = [
   # Switch to individual health insurance the year retirement begins
-  {year = "retirement", "Health" = "+400%", "Food" = "+10%"},
+  {year = "retirement", "Health" = "+400%"},
+
+  # Assume Medicare kicks in 5 years later and health costs drop
+  {year = "retirement+5", "Health" = "-60%"},
+
+  # Ramp down work-related spending the year before you stop working
+  {year = "retirement-1", "Transportation" = "-30%", "Other" = "-20%"},
 ]
 ```
 
-`"retirement"` rules work in assets, budget, and income. They are applied at the same calendar
-year as other rules with an explicit year matching retirement, so they can be combined freely.
+Retirement-relative rules work in assets, budget, and income. They can be combined with explicit
+calendar-year rules that happen to fall in the same year, and are always applied first.
 
-This is useful for events that are tied to the retirement date itself rather than to a fixed
-calendar year — for example, changes in spending driven by leaving the workforce, or a home sale
-timed to coincide with retirement.
+This is useful for events that are tied to the retirement date rather than a fixed calendar year;
+for example, changes in spending driven by leaving the workforce, a home sale timed to coincide with
+retirement, or a Social Security claim a few years after retiring.
 
 ### Sample rules
 

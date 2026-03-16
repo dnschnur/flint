@@ -8,7 +8,7 @@ from functools import cache, cached_property
 from typing import TypeAlias
 
 from assets import AssetCategory
-from rules import Rule, parse_rule, RETIREMENT_RULE_YEAR
+from rules import Rule, parse_rule, get_retirement_rule, is_retirement_sentinel
 
 
 class BudgetCategory(Enum):
@@ -149,9 +149,9 @@ class Budget:
                 (e.g. '50%'), a rule string (e.g. '=60000'), or a plain dollar amount.
             'growth': sub-dict of per-category inflation rate overrides, where values are
                 percentages (e.g. 3 for 3%).
-            'rules': list of per-year rule dicts, each with a 'year' key (int or "retirement").
-                Rules with year = "retirement" fire at whatever calendar year retirement begins,
-                resolved automatically by the simulation loops.
+            'rules': list of per-year rule dicts, each with a 'year' key (int, "retirement",
+                "retirement+N", or "retirement-N"). Retirement-relative rules apply to the year
+                with the corresponding offset from retirement.
       inflation: Optional Inflation instance, providing inflation rates for each mapped category.
           Explicit 'growth' overrides in the scenario config take precedence over inflation rates.
 
@@ -204,12 +204,12 @@ class Budget:
         if key == 'year':
           continue
         if key in ('529 Eligible', '529_eligible'):
-          if year == RETIREMENT_RULE_YEAR:
-            raise ValueError('"529 Eligible" does not support year = "retirement"')
+          if is_retirement_sentinel(year):
+            raise ValueError('"529 Eligible" does not support retirement-relative years')
           self._529_eligible[year] = _parse_fraction(value)
         elif key in ('Employer 401K Match', 'employer_401k_match'):
-          if year == RETIREMENT_RULE_YEAR:
-            raise ValueError('"Employer 401K Match" does not support year = "retirement"')
+          if is_retirement_sentinel(year):
+            raise ValueError('"Employer 401K Match" does not support retirement-relative years')
           self._load_employer_match(year, value, update_amounts=False)
         else:
           category = _parse_budget_category(key)
@@ -277,7 +277,7 @@ class Budget:
     category_rules = self._rules.get(category, {})
 
     # Apply at-retirement rules first. These never apply growth.
-    if year == retirement_year and (rule := category_rules.get(RETIREMENT_RULE_YEAR)):
+    if rule := get_retirement_rule(category_rules, year, retirement_year):
       amount = rule.apply(amount)
 
     if rule := category_rules.get(year):
