@@ -7,7 +7,7 @@ from enum import Enum
 from functools import cache, cached_property
 from typing import TypeAlias
 
-from rules import Rule, parse_rule, get_retirement_rule
+from rules import parse_rule, Rules
 
 
 class AssetCategory(Enum):
@@ -148,8 +148,8 @@ class Assets:
     # Base-year amounts by category.
     self._amounts: AssetDict = {}
 
-    # Rules mapping from (category, year) to rule.
-    self._rules: defaultdict[AssetCategory, dict[int, Rule]] = defaultdict(dict)
+    # Per-category rules (calendar-year and retirement-relative).
+    self._rules: defaultdict[AssetCategory, Rules] = defaultdict(Rules)
 
     # Per-category growth rate overrides (fraction, e.g. 0.05 for 5%).
     self._growth: dict[AssetCategory, float] = {}
@@ -171,12 +171,12 @@ class Assets:
       self._growth[_parse_asset_category(key)] = float(value) / 100.0
 
     for rule_entry in data.get('rules', []):
-      year = Rule.parse_year(rule_entry['year'])
+      year_spec = rule_entry['year']
       for key, value in rule_entry.items():
         if key == 'year':
           continue
         if rule := parse_rule(value):
-          self._rules[_parse_asset_category(key)][year] = rule
+          self._rules[_parse_asset_category(key)].add(year_spec, rule)
 
   @cache
   def get_category(self, category: AssetCategory, year: int, retirement_year: int) -> float:
@@ -194,7 +194,7 @@ class Assets:
 
     This is used by the simulation loops to advance each category's balance by a single year,
     respecting any rules defined for that year. Unlike _project_category, it operates on an
-    externally-supplied balance rather than replaying from the base year — so it correctly
+    externally-supplied balance rather than replaying from the base year, so it correctly
     handles balances that have been modified by income, withdrawals, and contributions.
 
     Args:
@@ -212,19 +212,7 @@ class Assets:
       The updated balance after applying any rule and growth.
     """
     rate = growth_rate if growth_rate is not None else self._growth.get(category, category.growth)
-    category_rules = self._rules.get(category, {})
-
-    # Apply at-retirement rules first. These never apply growth.
-    if rule := get_retirement_rule(category_rules, year, retirement_year):
-      amount = rule.apply(amount, context)
-
-    if rule := category_rules.get(year):
-      amount = rule.apply(amount, context)
-      if rule.apply_growth:
-        amount *= 1 + rate
-    else:
-      amount *= 1 + rate
-    return amount
+    return self._rules[category].apply(amount, year, retirement_year, rate, context)
 
   def _project_category(self, category: AssetCategory, year: int, retirement_year: int) -> float:
     """Returns the projected assets for a category in a future year.

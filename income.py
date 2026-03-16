@@ -9,7 +9,7 @@ Each type has a base-year value and optional projection rules.
 
 from functools import cache
 
-from rules import Rule, parse_rule, get_retirement_rule
+from rules import parse_rule, Rules
 
 
 class Income:
@@ -31,20 +31,19 @@ class Income:
     self._job_income = float(data.get('Job Income', 0))
     self._other_income = float(data.get('Other Income', 0))
 
-    # Rules mapping from year to rule.
-    self._rules_job: dict[int, Rule] = {}
-    self._rules_other: dict[int, Rule] = {}
+    self._rules_job = Rules()
+    self._rules_other = Rules()
 
     self._default_job_increase_rate = default_job_increase_rate
 
     for rule_entry in data.get('rules', []):
-      year = Rule.parse_year(rule_entry['year'])
+      year_spec = rule_entry['year']
       if 'Job Income' in rule_entry:
         if rule := parse_rule(str(rule_entry['Job Income']).strip()):
-          self._rules_job[year] = rule
+          self._rules_job.add(year_spec, rule)
       if 'Other Income' in rule_entry:
         if rule := parse_rule(str(rule_entry['Other Income']).strip()):
-          self._rules_other[year] = rule
+          self._rules_other.add(year_spec, rule)
 
   @cache
   def get(self, year: int, retirement_year: int) -> float:
@@ -60,7 +59,7 @@ class Income:
     return other_income
 
   def _project(
-    self, base_amount: float, rules: dict[int, Rule], year: int, retirement_year: int,
+    self, base_amount: float, rules: Rules, year: int, retirement_year: int,
   ) -> float:
     """Returns a projected income amount for the given year.
 
@@ -68,7 +67,7 @@ class Income:
 
     Args:
       base_amount: The base-year income amount.
-      rules: Dict mapping years to rules for this income type.
+      rules: Rules for this income type.
       year: The target year.
       retirement_year: The retirement start year.
     """
@@ -77,16 +76,7 @@ class Income:
 
     amount = base_amount
     for i in range(self.base_year + 1, year + 1):
-      # Apply at-retirement rules first. These never apply growth.
-      if rule := get_retirement_rule(rules, i, retirement_year):
-        amount = rule.apply(amount)
-
-      if rule := rules.get(i):
-        amount = rule.apply(amount)
-        if rule.apply_growth:
-          amount *= 1 + self._default_job_increase_rate
-      else:
-        amount *= 1 + self._default_job_increase_rate
+      amount = rules.apply(amount, i, retirement_year, self._default_job_increase_rate)
 
     return amount
 

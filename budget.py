@@ -8,7 +8,7 @@ from functools import cache, cached_property
 from typing import TypeAlias
 
 from assets import AssetCategory
-from rules import Rule, parse_rule, get_retirement_rule, is_retirement_sentinel
+from rules import parse_rule, Rules
 
 
 class BudgetCategory(Enum):
@@ -163,8 +163,8 @@ class Budget:
     # Base-year amounts by category.
     self._amounts: BudgetDict = {}
 
-    # Rules mapping from (category, year) to rule.
-    self._rules: defaultdict[BudgetCategory, dict[int, Rule]] = defaultdict(dict)
+    # Per-category rules (calendar-year and retirement-relative).
+    self._rules: defaultdict[BudgetCategory, Rules] = defaultdict(Rules)
 
     # Fraction of the School budget eligible to be paid from a 529 plan, by year.
     self._529_eligible: dict[int, float] = {}
@@ -199,24 +199,24 @@ class Budget:
             self._inflation[category] = average_rate
 
     for rule_entry in data.get('rules', []):
-      year = Rule.parse_year(rule_entry['year'])
+      year_spec = rule_entry['year']
       for key, value in rule_entry.items():
         if key == 'year':
           continue
         if key in ('529 Eligible', '529_eligible'):
-          if is_retirement_sentinel(year):
+          if Rules.is_retirement_spec(year_spec):
             raise ValueError('"529 Eligible" does not support retirement-relative years')
-          self._529_eligible[year] = _parse_fraction(value)
+          self._529_eligible[int(year_spec)] = _parse_fraction(value)
         elif key in ('Employer 401K Match', 'employer_401k_match'):
-          if is_retirement_sentinel(year):
+          if Rules.is_retirement_spec(year_spec):
             raise ValueError('"Employer 401K Match" does not support retirement-relative years')
-          self._load_employer_match(year, value, update_amounts=False)
+          self._load_employer_match(year_spec, value, update_amounts=False)
         else:
           category = _parse_budget_category(key)
           if rule := parse_rule(value):
-            self._rules[category][year] = rule
+            self._rules[category].add(year_spec, rule)
 
-  def _load_employer_match(self, year: int, value, update_amounts: bool) -> None:
+  def _load_employer_match(self, year_spec: str | int, value, update_amounts: bool) -> None:
     """Parse and store an Employer 401K Match value for the given year.
 
     A plain percentage (e.g. '50%') is stored as a fraction in _employer_match_fraction. When
@@ -225,10 +225,12 @@ class Budget:
     zeroes out the fraction.
 
     Args:
-      year: The year to associate the match with.
+      year_spec: The year to associate the match with, as an int or plain integer string.
+          Retirement-relative specs are not supported and should not be passed to this method.
       value: The raw TOML value (str or number).
       update_amounts: If True, also update _amounts (base-year context only).
     """
+    year = int(year_spec)
     value_str = str(value).strip()
     if (isinstance(value, str)
         and value_str.endswith('%')
@@ -240,7 +242,7 @@ class Budget:
     elif isinstance(value, str) and (rule := parse_rule(value_str)):
       # Rule string (e.g. '=60000', '+5%'): sets the dollar-amount side.
       self._employer_match_fraction[year] = 0.0
-      self._rules[BudgetCategory.EMPLOYER_401K_MATCH][year] = rule
+      self._rules[BudgetCategory.EMPLOYER_401K_MATCH].add(year_spec, rule)
     else:
       # Plain number: fixed dollar match.
       self._employer_match_fraction[year] = 0.0
@@ -248,7 +250,7 @@ class Budget:
         self._amounts[BudgetCategory.EMPLOYER_401K_MATCH] = float(value)
       else:
         if rule := parse_rule(value):
-          self._rules[BudgetCategory.EMPLOYER_401K_MATCH][year] = rule
+          self._rules[BudgetCategory.EMPLOYER_401K_MATCH].add(year_spec, rule)
 
   def advance(
     self,
@@ -274,19 +276,7 @@ class Budget:
     """
     if inflation is None:
       inflation = self._inflation.get(category, category.inflation)
-    category_rules = self._rules.get(category, {})
-
-    # Apply at-retirement rules first. These never apply growth.
-    if rule := get_retirement_rule(category_rules, year, retirement_year):
-      amount = rule.apply(amount)
-
-    if rule := category_rules.get(year):
-      amount = rule.apply(amount)
-      if rule.apply_growth:
-        amount *= 1 + inflation
-    else:
-      amount *= 1 + inflation
-    return amount
+    return self._rules[category].apply(amount, year, retirement_year, inflation)
 
   @cache
   def get_category(self, category: BudgetCategory, year: int, retirement_year: int) -> float:
