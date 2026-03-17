@@ -203,7 +203,7 @@ class Strategy:
          b. Cover any remaining shortfall:
             - Pre-retirement: from Cash → Bonds → Stocks
             - Retirement: proportionally from non-Cash, non-reserved assets, grossed up for
-              tax. Any uncovered remainder falls to Cash, which may go negative.
+              tax. Real Estate is liquidated last before Cash, which may go negative.
 
     During pre-retirement (retired=False):
       - Pre-tax contributions are made and income is taxed on the remainder
@@ -325,7 +325,8 @@ class Strategy:
         #      pushing income into the next bracket.
         #   3. Fallback: remaining non-reserved assets without bracket cap, to avoid negative
         #      Cash while other assets still remain.
-        #   4. Cash as final fallback (may go negative).
+        #   4. Real Estate: liquidate to cover any remaining shortfall before going into debt.
+        #   5. Cash as final fallback (may go negative).
 
         # Tracks cumulative taxable income across all passes so that each successive
         # ordinary income withdrawal is taxed at the correct marginal bracket.
@@ -382,7 +383,7 @@ class Strategy:
         # Pass 2: Proportional from tax-free pool (Bonds, Cash, Roth). None of these add
         # taxable income on withdrawal, so drawing them proportionally covers bracket-diverted
         # shortfall from pass 1 without pushing income into the next bracket.
-        if shortfall > 0:
+        if shortfall:
           tax_free_pool = {
             category: balance
             for category, balance in new_assets.items()
@@ -425,6 +426,13 @@ class Strategy:
                 net_covered = gross_withdrawal / multiplier
               new_assets[category] = balance - gross_withdrawal
               shortfall -= net_covered
+
+        bankrupt = shortfall and new_assets[AssetCategory.CASH] <= 0
+
+        # Pass 4: Liquidate Real Estate to cover any remaining shortfall before going into debt.
+        if bankrupt and new_assets[AssetCategory.REAL_ESTATE]:
+          shortfall -= new_assets[AssetCategory.REAL_ESTATE]
+          new_assets[AssetCategory.REAL_ESTATE] = 0
 
         # Any remaining shortfall comes from Cash (may go negative).
         remaining = -shortfall
