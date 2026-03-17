@@ -268,7 +268,18 @@ h2 {
   padding: 10px 14px;
   min-width: 130px;
   cursor: pointer;
+  position: relative;
   transition: border-color 0.15s;
+}
+
+.sim-card-liquidated-flag {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  font-size: 13px;
+  line-height: 1;
+  filter: grayscale(1) sepia(0.4) hue-rotate(195deg) brightness(0.6);
+  pointer-events: none;
 }
 
 .sim-card:hover {

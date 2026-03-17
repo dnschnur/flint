@@ -311,6 +311,14 @@ function showBinDetail(binRuns, binMin, binMax, startingTotal, retirementLength)
     changeEl.className = 'sim-card-change ' + (change >= 0 ? 'positive' : 'negative');
     changeEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + '%';
 
+    if (run.real_estate_liquidated) {
+      const flag = document.createElement('span');
+      flag.className = 'sim-card-liquidated-flag';
+      flag.textContent = '\uD83C\uDFE0';
+      flag.title = 'Real estate was sold to cover expenses';
+      card.appendChild(flag);
+    }
+
     card.addEventListener('click', () => showDetailView(run));
     card.append(period, total, changeEl);
     grid.appendChild(card);

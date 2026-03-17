@@ -31,10 +31,13 @@ class SimulationResult:
     assets: Final asset values by category at the end of retirement.
     history: Per-year snapshots of asset balances at the start of each
       retirement year, from start_year through end_year (inclusive).
+    real_estate_liquidated: True if Real Estate was force-liquidated in any
+      year to cover a shortfall after all other assets were exhausted.
   """
   start_year: int
   assets: defaultdict[AssetCategory, float]
   history: list[YearSnapshot] = field(default_factory=list)
+  real_estate_liquidated: bool = False
 
 
 class Simulation:
@@ -175,9 +178,11 @@ class Simulation:
     for historical_start_year in range(self.simulation_min_year, max_historical_start + 1):
       historical_end_year = historical_start_year + simulation_length
       if historical_end_year in self._sp500_data:
-        assets, history = self._run_single_simulation(
+        assets, history, real_estate_liquidated = self._run_single_simulation(
             pre_retirement_assets, start_year, end_year, historical_start_year)
-        yield SimulationResult(start_year=historical_start_year, assets=assets, history=history)
+        yield SimulationResult(
+            start_year=historical_start_year, assets=assets, history=history,
+            real_estate_liquidated=real_estate_liquidated)
 
   def _get_sp500_return(self, start_year: int, end_year: int) -> float:
     """Returns the S&P 500 return between two years.
@@ -254,7 +259,7 @@ class Simulation:
     start_year: int,
     end_year: int,
     historical_start_year: int
-  ) -> tuple[AssetDefaultDict, list[YearSnapshot]]:
+  ) -> tuple[AssetDefaultDict, list[YearSnapshot], bool]:
     """Run a single simulation using a specific historical period.
 
     Args:
@@ -264,11 +269,13 @@ class Simulation:
       historical_start_year: Starting year for historical S&P 500 data.
 
     Returns:
-      Tuple of (assets, history), where assets contains final values for each asset category, and
-      history is a list of per-year snapshots, one per year from start_year to end_year, each
-      capturing asset balances at the start of that year (before the strategy is applied).
+      Tuple of (assets, history, real_estate_liquidated), where assets contains final values for
+      each asset category, history is a list of per-year snapshots from start_year to end_year, and
+      real_estate_liquidated is True if the Real Estate balance dropped to zero in any year
+      (inferred by comparing the pre/post-strategy balance within the retirement loop).
     """
     history = []
+    real_estate_liquidated = False
     current_assets = defaultdict(float, starting_assets)
     current_historical_year = historical_start_year
     stock_basis = self._compute_stock_basis(start_year, current_assets.get(AssetCategory.STOCKS, 0.0))
@@ -302,12 +309,17 @@ class Simulation:
 
       year_income = self.income.get(year, retirement_year=start_year)
 
+      real_estate_before = current_assets[AssetCategory.REAL_ESTATE]
+
       current_assets = self.strategy.apply(
         year, current_assets, year_income, current_budget, retired=True, age=age,
         eligible_529=self.budget.get_529_eligible_fraction(year),
         cg_fraction=cg_fraction,
         employer_match_fraction=self.budget.get_employer_match_fraction(year)
       )
+
+      if real_estate_before and not current_assets[AssetCategory.REAL_ESTATE]:
+        real_estate_liquidated = True
 
       # After withdrawals, reduce basis proportionally to the Stocks balance reduction.
       # Market growth (applied below in apply_year) leaves basis unchanged — all growth is gains.
@@ -339,4 +351,4 @@ class Simulation:
         current_assets = new_assets
         current_historical_year = next_historical_year
 
-    return current_assets, history
+    return current_assets, history, real_estate_liquidated

@@ -265,7 +265,12 @@ def main():
         'median': median_total,
       },
       'results': [
-          {'start_year': result.start_year, 'total': totals[index], 'history': result.history}
+          {
+            'start_year': result.start_year,
+            'total': totals[index],
+            'history': result.history,
+            'real_estate_liquidated': result.real_estate_liquidated,
+          }
           for index, result in enumerate(results)
       ],
     }
