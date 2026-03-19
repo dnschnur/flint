@@ -351,4 +351,17 @@ class Simulation:
         current_assets = new_assets
         current_historical_year = next_historical_year
 
+    # Append a final snapshot at end_year + 1 showing the post-strategy end-of-simulation
+    # balances. This fills the gap that would otherwise leave the last year's activity invisible,
+    # since all other snapshots are captured before the strategy fires for that year.
+    history.append({
+      'year': end_year + 1,
+      'assets': {
+        category.display_name: round(value)
+        for category, value in current_assets.items()
+        if value
+      },
+      'budget': {},
+    })
+
     return current_assets, history, real_estate_liquidated

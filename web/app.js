@@ -352,7 +352,7 @@ function showDetailView(result) {
   document.getElementById('view-detail').hidden = false;
   window.scrollTo({ top: 0, behavior: 'instant' });
 
-  drawLineChart(result.history, retirement.start_year, retirement.end_year, result.start_year);
+  drawLineChart(result.history, retirement.start_year, retirement.end_year + 1, result.start_year);
   if (result.history.length > 0) {
     updateDetailTable(result.history[0], result.start_year, null);
   }
@@ -620,7 +620,7 @@ function drawLineChart(history, startYear, endYear, historicalStartYear) {
   // Mouse events
 
   const historicalYear = historicalStartYear != null
-    ? year => historicalStartYear + (year - startYear)
+    ? year => year < endYear ? historicalStartYear + (year - startYear) : null
     : () => null;
 
   overlay.addEventListener('mousemove', event => {
@@ -750,10 +750,14 @@ function updateDetailTable(snapshot, historicalYear, prevSnapshot) {
         `<span class="asset-swatch" style="background:${color}"></span>${name}</div>`;
     });
 
-  renderDetailTable(budgetBody, budgetFoot, snapshot.budget || {}, prevSnapshot?.budget ?? null,
-    (cell, name) => {
-      cell.textContent = name;
-    });
+  const hasBudget = snapshot.budget && Object.keys(snapshot.budget).length > 0;
+  document.getElementById('budget-column').hidden = !hasBudget;
+  if (hasBudget) {
+    renderDetailTable(budgetBody, budgetFoot, snapshot.budget, prevSnapshot?.budget ?? null,
+      (cell, name) => {
+        cell.textContent = name;
+      });
+  }
 }
 
 /**
