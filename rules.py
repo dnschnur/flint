@@ -40,6 +40,7 @@ the cross-category term is treated as 0 and the rule is a no-op.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -57,7 +58,7 @@ class Rule(ABC):
   apply_growth: bool
 
   @abstractmethod
-  def apply(self, previous: float, context: AssetDict | None = None) -> float:
+  def apply(self, previous: int, context: AssetDict | None = None) -> int:
     """Returns the new amount after applying the rule.
 
     Args:
@@ -72,10 +73,10 @@ class SetAmount(Rule):
 
   apply_growth = False
 
-  def __init__(self, amount: float):
+  def __init__(self, amount: int):
     self.amount = amount
 
-  def apply(self, previous: float, context: AssetDict | None = None) -> float:
+  def apply(self, previous: int, context: AssetDict | None = None) -> int:
     """Returns the fixed amount."""
     return self.amount
 
@@ -85,12 +86,12 @@ class AdjustByPercentage(Rule):
 
   apply_growth = True
 
-  def __init__(self, percentage: float):
+  def __init__(self, percentage: Decimal):
     self.percentage = percentage
 
-  def apply(self, previous: float, context: AssetDict | None = None) -> float:
+  def apply(self, previous: int, context: AssetDict | None = None) -> Decimal:
     """Returns the previous amount adjusted by the percentage."""
-    return previous * (1 + self.percentage)
+    return int(round(previous * (1 + self.percentage)))
 
 
 class AdjustByAmount(Rule):
@@ -98,10 +99,10 @@ class AdjustByAmount(Rule):
 
   apply_growth = True
 
-  def __init__(self, amount: float):
+  def __init__(self, amount: int):
     self.amount = amount
 
-  def apply(self, previous: float, context: AssetDict | None = None) -> float:
+  def apply(self, previous: int, context: AssetDict | None = None) -> int:
     """Returns the previous amount plus the adjustment amount."""
     return previous + self.amount
 
@@ -118,20 +119,21 @@ class AdjustByFractionOfOther(Rule):
 
   apply_growth = True
 
-  def __init__(self, category: AssetCategory, fraction: float):
+  def __init__(self, category: AssetCategory, fraction: Decimal):
     self.category = category
     self.fraction = fraction  # signed; negative subtracts
 
-  def apply(self, previous: float, context: AssetDict | None = None) -> float:
+  def apply(self, previous: int, context: AssetDict | None = None) -> int:
     """Returns previous plus fraction * the other category's pre-rule value."""
-    other = context.get(self.category, 0.0) if context else 0.0
-    return previous + self.fraction * other
+    other = context.get(self.category, 0) if context else 0
+    return previous + int(round(self.fraction * other))
 
 
-def parse_rule(value: str | int | float) -> Rule | None:
+def parse_rule(value: str | int) -> Rule | None:
   """Parse a rule value into a Rule object.
 
-  Numeric values (int or float) are always treated as SetAmount. String formats:
+  Numeric int values are always treated as SetAmount. String formats:
+
     "=##.#"          -> SetAmount               (apply_growth=False by default)
     "+##.#"          -> AdjustByAmount          (apply_growth=True by default)
     "-##.#"          -> AdjustByAmount          (apply_growth=True by default)
@@ -153,8 +155,8 @@ def parse_rule(value: str | int | float) -> Rule | None:
   Returns:
     The parsed Rule object, or None if no rule.
   """
-  if isinstance(value, (int, float)):
-    return SetAmount(float(value))
+  if isinstance(value, int):
+    return SetAmount(value)
 
   rule_str = value
   if not rule_str or not rule_str.strip():
@@ -177,18 +179,18 @@ def parse_rule(value: str | int | float) -> Rule | None:
     if amount_part.endswith('%') and amount_part.startswith(('+', '-')):
       from assets import AssetCategory  # lazy import to avoid circular dependency
       category = AssetCategory.from_name(category_name)
-      rule = AdjustByFractionOfOther(category, float(amount_part[:-1]) / 100.0)
+      rule = AdjustByFractionOfOther(category, Decimal(amount_part[:-1]) / 100)
     else:
       return None
-  # SetAmount: =##.#
+  # SetAmount: =###
   elif rule_str.startswith('='):
-    rule = SetAmount(float(rule_str[1:]))
+    rule = SetAmount(int(rule_str[1:]))
   # AdjustByPercentage: +##.#% or -##.#%
   elif rule_str.endswith('%'):
-    rule = AdjustByPercentage(float(rule_str[:-1]) / 100.0)
-  # AdjustByAmount: +##.# or -##.#
+    rule = AdjustByPercentage(Decimal(rule_str[:-1]) / 100)
+  # AdjustByAmount: +### or -###
   elif rule_str.startswith(('+', '-')):
-    rule = AdjustByAmount(float(rule_str))
+    rule = AdjustByAmount(int(rule_str))
   else:
     return None
 
@@ -245,8 +247,8 @@ class Rules:
       self._calendar[int(year_spec)] = rule
 
   def apply(
-    self, amount: float, year: int, retirement_year: int, growth: float, context=None
-  ) -> float:
+    self, amount: int, year: int, retirement_year: int, growth: Decimal, context=None
+  ) -> int:
     """Applies rules to the given amount in the given year.
 
     If there is a retirement-relative rule for this year, it is applied first, followed by any
@@ -261,16 +263,17 @@ class Rules:
       context: Optional asset snapshot keyed by AssetCategory, used for cross-category rules.
 
     Returns:
-      The updated amount after applying rules and growth.
+      The updated amount after applying rules and growth, rounded to the nearest integer.
     """
     if rule := self._retirement.get(year - retirement_year):
       amount = rule.apply(amount, context)
 
+    growth_factor = 1 + growth
     if rule := self._calendar.get(year):
       amount = rule.apply(amount, context)
       if rule.apply_growth:
-        amount *= 1 + growth
+        amount *= growth_factor
     else:
-      amount *= 1 + growth
+      amount *= growth_factor
 
-    return amount
+    return int(round(amount))

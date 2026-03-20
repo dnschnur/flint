@@ -3,30 +3,32 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal
 from enum import Enum
 from functools import cache, cached_property
 from typing import TypeAlias
 
 from rules import parse_rule, Rules
+from util import parse_percentage
 
 
 class AssetCategory(Enum):
   """Asset categories with associated properties."""
 
-  CASH = ('Cash', 0.03)
-  PLAN_401K = ('401K', 0.07)
-  ROTH_401K = ('Roth 401K', 0.07)
-  IRA = ('IRA', 0.08)
-  ROTH_IRA = ('Roth IRA', 0.08)
-  STOCKS = ('Stocks', 0.08)
-  BONDS = ('Bonds', 0.04)
-  PLAN_529 = ('529 Plan', 0.07)
-  HSA = ('HSA', 0.06)
-  REAL_ESTATE = ('Real Estate', 0.03)
+  CASH = ('Cash', '3%')
+  PLAN_401K = ('401K', '7%')
+  ROTH_401K = ('Roth 401K', '7%')
+  IRA = ('IRA', '8%')
+  ROTH_IRA = ('Roth IRA', '8%')
+  STOCKS = ('Stocks', '8%')
+  BONDS = ('Bonds', '4%')
+  PLAN_529 = ('529 Plan', '7%')
+  HSA = ('HSA', '6%')
+  REAL_ESTATE = ('Real Estate', '3%')
 
-  def __init__(self, display_name: str, growth: float):
+  def __init__(self, display_name: str, growth: str):
     self.display_name = display_name
-    self.growth = growth
+    self.growth: Decimal = parse_percentage(growth)
 
   @staticmethod
   @cache
@@ -36,9 +38,9 @@ class AssetCategory(Enum):
     Raises:
       ValueError: If there is no asset category with the given name.
     """
-    for cat in AssetCategory:
-      if cat.display_name == name:
-        return cat
+    for category in AssetCategory:
+      if category.display_name == name:
+        return category
     raise ValueError(f'Unrecognized asset category "{name}".')
 
   @cached_property
@@ -97,8 +99,8 @@ class AssetCategory(Enum):
     }
 
 
-AssetDict: TypeAlias = dict[AssetCategory, float]
-AssetDefaultDict: TypeAlias = defaultdict[AssetCategory, float]
+AssetDict: TypeAlias = dict[AssetCategory, int]
+AssetDefaultDict: TypeAlias = defaultdict[AssetCategory, int]
 
 
 def _parse_asset_category(name: str) -> AssetCategory:
@@ -152,23 +154,19 @@ class Assets:
     self._rules: defaultdict[AssetCategory, Rules] = defaultdict(Rules)
 
     # Per-category growth rate overrides (fraction, e.g. 0.05 for 5%).
-    self._growth: dict[AssetCategory, float] = {}
+    self._growth: dict[AssetCategory, Decimal] = {}
 
     # Fraction of the base-year Stocks balance that is currently gains (above cost basis).
     # Future purchases add to cost basis and reduce this over time.
-    capital_gains_percentage = str(data.get('Capital Gains Percentage', 50)).strip()
-    if capital_gains_percentage.endswith('%'):
-      self.base_cg_fraction = float(capital_gains_percentage[:-1]) / 100.0
-    else:
-      self.base_cg_fraction = float(capital_gains_percentage) / 100.0
+    self.base_cg_fraction: Decimal = parse_percentage(data.get('Capital Gains Percentage', 50))
 
     for key, value in data.items():
       if key in ('rules', 'growth', 'Capital Gains Percentage'):
         continue
-      self._amounts[_parse_asset_category(key)] = float(value)
+      self._amounts[_parse_asset_category(key)] = int(value)
 
     for key, value in data.get('growth', {}).items():
-      self._growth[_parse_asset_category(key)] = float(value) / 100.0
+      self._growth[_parse_asset_category(key)] = Decimal(value) / 100
 
     for rule_entry in data.get('rules', []):
       year_spec = rule_entry['year']
@@ -179,17 +177,17 @@ class Assets:
           self._rules[_parse_asset_category(key)].add(year_spec, rule)
 
   @cache
-  def get_category(self, category: AssetCategory, year: int, retirement_year: int) -> float:
+  def get_category(self, category: AssetCategory, year: int, retirement_year: int) -> int:
     """Returns the amount for a category in a given year, defaulting to zero."""
     if year > self.base_year:
       return self._project_category(category, year, retirement_year)
-    return self._amounts.get(category, 0.0)
+    return self._amounts.get(category, 0)
 
   def apply_year(
-    self, category: AssetCategory, year: int, amount: float, retirement_year: int,
-    growth_rate: float | None = None,
+    self, category: AssetCategory, year: int, amount: int, retirement_year: int,
+    growth_rate: Decimal | None = None,
     context: AssetDict | None = None,
-  ) -> float:
+  ) -> int:
     """Apply one year's rule (if any) and growth to an asset balance.
 
     This is used by the simulation loops to advance each category's balance by a single year,
@@ -214,7 +212,7 @@ class Assets:
     rate = growth_rate if growth_rate is not None else self._growth.get(category, category.growth)
     return self._rules[category].apply(amount, year, retirement_year, rate, context)
 
-  def _project_category(self, category: AssetCategory, year: int, retirement_year: int) -> float:
+  def _project_category(self, category: AssetCategory, year: int, retirement_year: int) -> int:
     """Returns the projected assets for a category in a future year.
 
     Applies rules in order from the base year to the target year, delegating each year's step
@@ -228,7 +226,7 @@ class Assets:
     Returns:
       The projected asset amount for the category in the given year.
     """
-    amount = self._amounts.get(category, 0.0)
+    amount = self._amounts.get(category, 0)
     for i in range(self.base_year + 1, year + 1):
       amount = self.apply_year(category, i, amount, retirement_year)
     return amount

@@ -7,15 +7,18 @@ Income is split into two types:
 Each type has a base-year value and optional projection rules.
 """
 
+from decimal import Decimal
 from functools import cache
 
 from rules import parse_rule, Rules
+
+DEFAULT_JOB_INCREASE_RATE = Decimal('0.03')
 
 
 class Income:
   """Income tracking with a base-year snapshot and projection rules."""
 
-  def __init__(self, base_year: int, data: dict, default_job_increase_rate: float = 0.03):
+  def __init__(self, base_year: int, data: dict):
     """Initialize from a scenario TOML [income] data dict.
 
     Args:
@@ -25,16 +28,13 @@ class Income:
           key contains a list of per-year rule dicts with a 'year' key (int, "retirement",
           "retirement+N", or "retirement-N") and the same income keys. Retirement-relative
           rules apply to the year with the corresponding offset from retirement.
-      default_job_increase_rate: Annual job income increase rate (default 3%).
     """
     self.base_year = base_year
-    self._job_income = float(data.get('Job Income', 0))
-    self._other_income = float(data.get('Other Income', 0))
+    self._job_income = int(data.get('Job Income', 0))
+    self._other_income = int(data.get('Other Income', 0))
 
     self._rules_job = Rules()
     self._rules_other = Rules()
-
-    self._default_job_increase_rate = default_job_increase_rate
 
     for rule_entry in data.get('rules', []):
       year_spec = rule_entry['year']
@@ -46,7 +46,7 @@ class Income:
           self._rules_other.add(year_spec, rule)
 
   @cache
-  def get(self, year: int, retirement_year: int) -> float:
+  def get(self, year: int, retirement_year: int) -> int:
     """Returns the total income for the given year.
 
     Args:
@@ -58,9 +58,7 @@ class Income:
       return self._project_job_income(year, retirement_year) + other_income
     return other_income
 
-  def _project(
-    self, base_amount: float, rules: Rules, year: int, retirement_year: int,
-  ) -> float:
+  def _project(self, base_amount: int, rules: Rules, year: int, retirement_year: int) -> int:
     """Returns a projected income amount for the given year.
 
     Applies rules and the default growth rate year-by-year from the base year.
@@ -76,14 +74,14 @@ class Income:
 
     amount = base_amount
     for i in range(self.base_year + 1, year + 1):
-      amount = rules.apply(amount, i, retirement_year, self._default_job_increase_rate)
+      amount = rules.apply(amount, i, retirement_year, DEFAULT_JOB_INCREASE_RATE)
 
     return amount
 
-  def _project_job_income(self, year: int, retirement_year: int) -> float:
+  def _project_job_income(self, year: int, retirement_year: int) -> int:
     """Returns the projected job income for the given year."""
     return self._project(self._job_income, self._rules_job, year, retirement_year)
 
-  def _project_other_income(self, year: int, retirement_year: int) -> float:
+  def _project_other_income(self, year: int, retirement_year: int) -> int:
     """Returns the projected other income for the given year."""
     return self._project(self._other_income, self._rules_other, year, retirement_year)

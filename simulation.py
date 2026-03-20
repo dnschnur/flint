@@ -8,6 +8,7 @@ The simulation runs in two phases:
 import csv
 
 from collections import defaultdict
+from decimal import Decimal
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
@@ -35,7 +36,7 @@ class SimulationResult:
       year to cover a shortfall after all other assets were exhausted.
   """
   start_year: int
-  assets: defaultdict[AssetCategory, float]
+  assets: AssetDefaultDict
   history: list[YearSnapshot] = field(default_factory=list)
   real_estate_liquidated: bool = False
 
@@ -132,7 +133,7 @@ class Simulation:
         employer_match_fraction=self.budget.get_employer_match_fraction(year)
       )
 
-      new_assets = defaultdict(float)
+      new_assets = defaultdict(int)
       for category, value in current_assets.items():
         new_assets[category] = self.assets.apply_year(
             category, year + 1, value, retirement_year, context=current_assets)
@@ -184,7 +185,7 @@ class Simulation:
             start_year=historical_start_year, assets=assets, history=history,
             real_estate_liquidated=real_estate_liquidated)
 
-  def _get_sp500_return(self, start_year: int, end_year: int) -> float:
+  def _get_sp500_return(self, start_year: int, end_year: int) -> Decimal:
     """Returns the S&P 500 return between two years.
 
     Args:
@@ -198,7 +199,7 @@ class Simulation:
     end_value = self._sp500_data[end_year]
     return (end_value - start_value) / start_value
 
-  def _load_sp500(self, path: str) -> dict[int, float]:
+  def _load_sp500(self, path: str) -> dict[int, Decimal]:
     """Load historical S&P 500 data from CSV (January values only).
 
     Expected format:
@@ -221,11 +222,11 @@ class Simulation:
         # Only load January values (YYYY-01)
         if date.endswith('-01'):
           year = int(date[:4])
-          value = float(row['Value'].replace(',', ''))
+          value = Decimal(row['Value'].replace(',', ''))
           data[year] = value
     return data
 
-  def _compute_stock_basis(self, start_year: int, starting_stocks: float) -> float:
+  def _compute_stock_basis(self, start_year: int, starting_stocks: int) -> Decimal:
     """Estimate the stock cost basis at the start of retirement.
 
     Starts from the base-year Stocks balance scaled by (1 - Capital Gains Percentage), then
@@ -245,17 +246,18 @@ class Simulation:
     """
     initial_stocks = self.assets.get_category(
         AssetCategory.STOCKS, self.data_year, retirement_year=start_year)
-    basis = initial_stocks * (1.0 - self.assets.base_cg_fraction)
+    basis = initial_stocks * (1 - self.assets.base_cg_fraction)
 
     # Stock budget contributions during pre-retirement are pure cost basis.
+    # TODO: this doesn't factor in cash contributions reinvested as stock!
     for year in range(self.data_year, start_year):
       basis += self.budget.get_category(BudgetCategory.STOCKS, year, retirement_year=start_year)
 
-    return max(0.0, min(basis, starting_stocks))
+    return Decimal(max(0, min(basis, starting_stocks)))
 
   def _run_single_simulation(
     self,
-    starting_assets: dict[AssetCategory, float],
+    starting_assets: AssetDict,
     start_year: int,
     end_year: int,
     historical_start_year: int
@@ -276,9 +278,12 @@ class Simulation:
     """
     history = []
     real_estate_liquidated = False
-    current_assets = defaultdict(float, starting_assets)
+    current_assets = defaultdict(int, starting_assets)
     current_historical_year = historical_start_year
-    stock_basis = self._compute_stock_basis(start_year, current_assets.get(AssetCategory.STOCKS, 0.0))
+
+    # Normally whole-dollar values like this would use an int, but here we use Decimal, so it's
+    # cleaner to recompute it from year-to-year in the loop below, without losing precision.
+    stock_basis = self._compute_stock_basis(start_year, current_assets.get(AssetCategory.STOCKS, 0))
 
     # Track budget amounts directly so each year's budget grows by the actual historical
     # inflation rate rather than the long-run average. Rules still fire at their scheduled
@@ -292,20 +297,20 @@ class Simulation:
       history.append({
         'year': year,
         'assets': {
-          category.display_name: round(value)
+          category.display_name: value
           for category, value in current_assets.items()
           if value
         },
         'budget': {
-          category.display_name: round(amount)
+          category.display_name: amount
           for category, amount in current_budget.items()
           if amount and category.asset_category is None
         },
       })
 
       # Compute capital gains fraction from tracked cost basis.
-      old_stocks = current_assets.get(AssetCategory.STOCKS, 0.0)
-      cg_fraction = max(0.0, 1.0 - stock_basis / old_stocks) if old_stocks > 0 else 0.0
+      old_stocks = current_assets.get(AssetCategory.STOCKS, 0)
+      cg_fraction = max(Decimal(0), 1 - stock_basis / old_stocks) if old_stocks else Decimal(0)
 
       year_income = self.income.get(year, retirement_year=start_year)
 
@@ -323,9 +328,12 @@ class Simulation:
 
       # After withdrawals, reduce basis proportionally to the Stocks balance reduction.
       # Market growth (applied below in apply_year) leaves basis unchanged — all growth is gains.
-      new_stocks = current_assets.get(AssetCategory.STOCKS, 0.0)
-      if old_stocks > 0 and new_stocks < old_stocks:
-        stock_basis *= new_stocks / old_stocks
+      new_stocks = current_assets.get(AssetCategory.STOCKS, 0)
+      if old_stocks and new_stocks < old_stocks:
+        # This doesn't use *= because otherwise new_stocks / old_stocks produces a float, which we
+        # can't multiply with stock_basis, which is (and should remain) a Decimal. Starting with
+        # stock_basis on the right-hand-side forces the use of Decimal for intermediate values.
+        stock_basis = stock_basis * new_stocks / old_stocks
 
       if year < end_year:  # Don't grow in the final year
         next_historical_year = current_historical_year + 1
@@ -357,7 +365,7 @@ class Simulation:
     history.append({
       'year': end_year + 1,
       'assets': {
-        category.display_name: round(value)
+        category.display_name: value
         for category, value in current_assets.items()
         if value
       },

@@ -5,6 +5,8 @@ RMDs apply to traditional (pre-tax) retirement accounts like 401Ks and IRAs.
 
 import csv
 
+from decimal import Decimal
+
 
 class RMD:
   """Required Minimum Distribution calculator."""
@@ -16,11 +18,11 @@ class RMD:
       path: Path to the CSV file containing RMD divisors.
     """
     # Mapping from age to divisor
-    self._divisors: dict[int, float] = {}
+    self._divisors: dict[int, Decimal] = {}
 
     self._load_csv(path)
 
-  def calculate(self, age: int, account_balance: float) -> float:
+  def calculate(self, age: int, account_balance: int) -> int:
     """Calculate the required minimum distribution for a given age and balance.
 
     Args:
@@ -31,9 +33,7 @@ class RMD:
       The required minimum distribution amount, or 0 if no RMD required.
     """
     divisor = self._divisors.get(age)
-    if divisor and divisor > 0:
-      return account_balance / divisor
-    return 0.0
+    return int(round(account_balance / divisor)) if divisor else 0
 
   def _load_csv(self, path: str) -> None:
     """Load the RMD divisor table from the given CSV file path.
@@ -48,4 +48,4 @@ class RMD:
       reader = csv.DictReader(f)
       for row in reader:
         age = int(row['Age'])
-        self._divisors[age] = float(row['Divisor'])
+        self._divisors[age] = Decimal(row['Divisor'])

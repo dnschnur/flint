@@ -211,12 +211,12 @@ def main():
       pre_retirement_history.append({
         'year': year + 1,
         'assets': {
-          category.display_name: round(value)
+          category.display_name: value
           for category, value in assets_snapshot.items()
           if value
         },
         'budget': {
-          category.display_name: round(amount)
+          category.display_name: amount
           for category, amount in budget_snapshot.items()
           if amount
         },
@@ -224,7 +224,7 @@ def main():
       starting_assets = assets_snapshot
 
     if starting_assets is None:
-      current = defaultdict(float)
+      current = defaultdict(int)
       for category in AssetCategory:
         value = sim.assets.get_category(category, base_year, retirement_year=start_year)
         if value:

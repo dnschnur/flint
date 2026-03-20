@@ -5,6 +5,7 @@ accumulation phase and the retirement drawdown phase.
 """
 
 from collections import defaultdict
+from decimal import Decimal
 
 from assets import AssetCategory, AssetDict, AssetDefaultDict
 from budget import BudgetCategory, BudgetDict
@@ -20,7 +21,7 @@ _LIQUID_ASSETS = (
 )
 
 
-def _is_withdrawal_eligible(category: AssetCategory, balance: float, age: int) -> bool:
+def _is_withdrawal_eligible(category: AssetCategory, balance: int, age: int) -> bool:
   """Returns whether the asset is eligible for general-pool withdrawal at the given age.
 
   Excludes Cash (handled as the final fallback), reserved accounts (HSA, 529, Real Estate),
@@ -37,13 +38,13 @@ def _is_withdrawal_eligible(category: AssetCategory, balance: float, age: int) -
 
 
 def _gross_up_ordinary(
-  net: float,
-  balance: float,
-  running_income: float,
+  net: int,
+  balance: int,
+  running_income: int,
   year: int,
   tax: Tax,
   bracket_cap: bool = False
-) -> tuple[float, float]:
+) -> tuple[int, int]:
   """Compute a gross ordinary-income withdrawal that yields `net` after incremental tax.
 
   Args:
@@ -58,12 +59,10 @@ def _gross_up_ordinary(
   Returns:
     (gross_withdrawal, net_covered): Gross amount withdrawn and net amount actually covered.
   """
-  gross = tax.gross_for_net_ordinary(net, running_income, year)
+  gross = min(balance, tax.gross_for_net_ordinary(net, running_income, year))
   if bracket_cap:
-    bracket_remaining = tax.next_ordinary_bracket_threshold(running_income, year) - running_income
-    gross = min(gross, bracket_remaining, balance)
-  else:
-    gross = min(gross, balance)
+    if next_threshold := tax.next_ordinary_bracket_threshold(running_income, year):
+      gross = min(gross, next_threshold - running_income)
   net_covered = gross - tax.incremental_ordinary_tax(running_income, gross, year)
   return gross, net_covered
 
@@ -71,10 +70,10 @@ def _gross_up_ordinary(
 def _withdrawal_multiplier(
   category: AssetCategory,
   tax: Tax,
-  taxable_income: float,
+  taxable_income: int,
   year: int,
-  cg_fraction: float
-) -> float:
+  cg_fraction: Decimal
+) -> Decimal:
   """Returns the gross-up multiplier for a withdrawal from the given asset category.
 
   To net $X from an asset after tax, the gross withdrawal is X * multiplier. The excess
@@ -92,15 +91,15 @@ def _withdrawal_multiplier(
   """
   if category.capital_gains and cg_fraction:
     rate = tax.marginal_rate(taxable_income, year, capital_gains=True)
-    return 1.0 + cg_fraction * rate
-  return 1.0
+    return 1 + cg_fraction * rate
+  return Decimal(1)
 
 
 def _apply_529_withdrawal(
   new_assets: AssetDefaultDict,
   budget: BudgetDict,
-  eligible_529: float
-) -> float:
+  eligible_529: Decimal
+) -> int:
   """Unconditionally withdraw from 529 to cover 529-eligible school expenses.
 
   This runs regardless of whether income covers school expenses, to ensure 529 assets
@@ -118,11 +117,11 @@ def _apply_529_withdrawal(
     The amount withdrawn from the 529 plan.
   """
   if not eligible_529:
-    return 0.0
-  school_expenses = budget.get(BudgetCategory.SCHOOL, 0.0)
-  eligible_amount = school_expenses * eligible_529
+    return 0
+  school_expenses = budget.get(BudgetCategory.SCHOOL, 0)
+  eligible_amount = int(round(school_expenses * eligible_529))
   if not eligible_amount:
-    return 0.0
+    return 0
   withdrawal = min(eligible_amount, new_assets[AssetCategory.PLAN_529])
   new_assets[AssetCategory.PLAN_529] -= withdrawal
   return withdrawal
@@ -131,8 +130,8 @@ def _apply_529_withdrawal(
 def _apply_hsa_withdrawal(
   new_assets: AssetDefaultDict,
   budget: BudgetDict,
-  shortfall: float
-) -> float:
+  shortfall: int
+) -> int:
   """Withdraw from HSA to cover a health expense shortfall.
 
   Only draws from the HSA when there is an actual funding shortfall, up to the health
@@ -149,9 +148,9 @@ def _apply_hsa_withdrawal(
   Returns:
     The amount withdrawn from the HSA.
   """
-  health_expenses = budget.get(BudgetCategory.HEALTH, 0.0)
+  health_expenses = budget.get(BudgetCategory.HEALTH, 0)
   if not health_expenses:
-    return 0.0
+    return 0
   withdrawal = min(health_expenses, new_assets[AssetCategory.HSA], shortfall)
   if withdrawal:
     new_assets[AssetCategory.HSA] -= withdrawal
@@ -182,13 +181,13 @@ class Strategy:
     self,
     year: int,
     assets: AssetDict,
-    income: float,
+    income: int,
     budget: BudgetDict,
     retired: bool = False,
     age: int = 0,
-    eligible_529: float = 0.0,
-    cg_fraction: float = 0.0,
-    employer_match_fraction: float = 0.0
+    eligible_529: Decimal = Decimal(0),
+    cg_fraction: Decimal = Decimal(0),
+    employer_match_fraction: Decimal = Decimal(0)
   ) -> AssetDefaultDict:
     """Returns updated asset values after applying income, tax, and budget for the year.
 
@@ -226,7 +225,7 @@ class Strategy:
       age: Current age.
       eligible_529: Fraction of the school budget payable from the 529 plan.
       cg_fraction: Fraction of stock/asset withdrawals treated as capital gains. Should be
-          0.0 pre-retirement, ramping from 0.0 to 1.0 linearly over retirement.
+          0 pre-retirement, ramping from 0 to 1 linearly over retirement.
       employer_match_fraction: Employer 401K match as a fraction of the employee's pre-tax
           401K contribution (e.g. 0.5 for a 50% match). Applied pre-retirement only. Added
           directly to the pre-tax 401K balance without affecting taxable income.
@@ -237,15 +236,14 @@ class Strategy:
     Raises:
       ValueError: If pre-retirement shortfall cannot be covered by liquid assets.
     """
-    # Start with a copy of current assets, defaulting missing categories to 0.0.
-    new_assets: AssetDefaultDict = defaultdict(float, assets)
+    # Start with a copy of current assets, defaulting missing categories to 0.
+    new_assets: AssetDefaultDict = defaultdict(int, assets)
 
     # Calculate and withdraw RMDs first; they count as ordinary income.
-    rmd_income = 0.0
+    rmd_income = 0
     for asset_category in AssetCategory:
-      if asset_category.subject_to_rmd and new_assets[asset_category] > 0:
-        rmd_amount = self.rmd.calculate(age, new_assets[asset_category])
-        if rmd_amount > 0:
+      if asset_category.subject_to_rmd and new_assets[asset_category]:
+        if rmd_amount := self.rmd.calculate(age, new_assets[asset_category]):
           new_assets[asset_category] -= rmd_amount
           rmd_income += rmd_amount
 
@@ -261,13 +259,13 @@ class Strategy:
 
       # Apply employer 401K match. This does not affect taxable income.
       if employer_match_fraction:
-        pre_tax_401k = budget.get(BudgetCategory.PRE_TAX_401K, 0.0)
-        new_assets[AssetCategory.PLAN_401K] += pre_tax_401k * employer_match_fraction
+        pre_tax_401k = budget.get(BudgetCategory.PRE_TAX_401K, 0)
+        new_assets[AssetCategory.PLAN_401K] += int(round(pre_tax_401k * employer_match_fraction))
 
     # Apply ordinary income tax on the post-contribution income.
     # Track taxable_income for use in withdrawal gross-up calculations later.
     taxable_income = remaining
-    remaining -= self.tax.calculate(taxable_income, year)
+    remaining -= int(round(self.tax.calculate(taxable_income, year)))
 
     # Process remaining budget items (expenses and after-tax contributions).
     for category, amount in budget.items():
@@ -300,10 +298,9 @@ class Strategy:
         # Pre-retirement: withdraw from liquid assets in priority order.
         if shortfall:
           for asset_category in _LIQUID_ASSETS:
-            if shortfall <= 0:
+            if not shortfall:
               break
-            withdrawal = min(new_assets[asset_category], shortfall)
-            if withdrawal > 0:
+            if withdrawal := min(new_assets[asset_category], shortfall):
               new_assets[asset_category] -= withdrawal
               shortfall -= withdrawal
 
@@ -355,7 +352,7 @@ class Strategy:
           else:
             multiplier = _withdrawal_multiplier(
                 category, self.tax, taxable_income, year, cg_fraction)
-            effective_pool[category] = balance / multiplier
+            effective_pool[category] = int(round(balance / multiplier))
             cg_multipliers[category] = multiplier
         total_effective = sum(effective_pool.values())
 
@@ -367,16 +364,16 @@ class Strategy:
           for category, balance in general_pool.items():
             effective_balance = effective_pool[category]
             proportion = effective_balance / total_effective
-            net_needed = min(effective_balance, original_shortfall * proportion)
+            net_needed = min(effective_balance, int(round(original_shortfall * proportion)))
             if category.ordinary_income:
               # Cap at the bracket boundary (to avoid paying the higher rate) and at the available
               # balance. Leave any uncovered net in shortfall for the tax-free and fallback passes.
               gross_withdrawal, net_covered = _gross_up_ordinary(
-                net_needed, balance, running_income, year, self.tax, bracket_cap=True)
+                  net_needed, balance, running_income, year, self.tax, bracket_cap=True)
               shortfall -= net_covered
               running_income += gross_withdrawal
             else:
-              gross_withdrawal = net_needed * cg_multipliers[category]
+              gross_withdrawal = int(round(net_needed * cg_multipliers[category]))
               shortfall -= net_needed
             new_assets[category] = balance - gross_withdrawal
 
@@ -391,12 +388,12 @@ class Strategy:
             and (category.cash_equivalent
                  or (category.is_roth and age >= category.withdrawal_min_age))
           }
-          total_tax_free = sum(tax_free_pool.values())
-          if total_tax_free > 0:
+          total_tax_free = sum(tax_free_pool.values(), 0)
+          if total_tax_free:
             original_shortfall = shortfall
             for category, balance in tax_free_pool.items():
               proportion = balance / total_tax_free
-              withdrawal = min(balance, original_shortfall * proportion)
+              withdrawal = min(balance, int(round(original_shortfall * proportion)))
               new_assets[category] -= withdrawal
               shortfall -= withdrawal
 
@@ -409,21 +406,21 @@ class Strategy:
             for category, balance in new_assets.items()
             if _is_withdrawal_eligible(category, balance, age)
           }
-          total_fallback = sum(fallback_pool.values())
+          total_fallback = sum(fallback_pool.values(), 0)
           if total_fallback:
             original_shortfall = shortfall
             for category, balance in fallback_pool.items():
-              proportion = balance / total_fallback
+              proportion = Decimal(balance) / total_fallback
               net_target = original_shortfall * proportion
               if category.ordinary_income:
                 gross_withdrawal, net_covered = _gross_up_ordinary(
-                  net_target, balance, running_income, year, self.tax)
+                    int(round(net_target)), balance, running_income, year, self.tax)
                 running_income += gross_withdrawal
               else:
                 multiplier = _withdrawal_multiplier(
-                  category, self.tax, running_income, year, cg_fraction)
-                gross_withdrawal = min(balance, net_target * multiplier)
-                net_covered = gross_withdrawal / multiplier
+                    category, self.tax, running_income, year, cg_fraction)
+                gross_withdrawal = min(balance, int(round(net_target * multiplier)))
+                net_covered = int(round(gross_withdrawal / multiplier))
               new_assets[category] = balance - gross_withdrawal
               shortfall -= net_covered
 
@@ -440,7 +437,7 @@ class Strategy:
     # Any post-retirement surplus goes 50% to Stocks, and the rest to Cash.
     # A future improvement might be to allow defining the post-retirement reinvestment mix.
     if retired and remaining > 0:
-      reinvestment = remaining / 2
+      reinvestment = int(round(remaining / 2))
       new_assets[AssetCategory.STOCKS] += reinvestment
       remaining -= reinvestment
 

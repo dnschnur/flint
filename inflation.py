@@ -6,6 +6,7 @@ or as year-specific values used by the Monte Carlo simulation.
 
 import csv
 
+from decimal import Decimal
 from functools import cache
 
 from budget import BudgetCategory
@@ -35,10 +36,10 @@ class Inflation:
     Args:
       inflation_path: Path to the inflation.csv file.
     """
-    self._series: dict[str, dict[int, float]] = self._load_inflation(inflation_path)
-    self._average_rates: dict[str, float] = self._compute_average_rates()
+    self._series: dict[str, dict[int, Decimal]] = self._load_inflation(inflation_path)
+    self._average_rates: dict[str, Decimal] = self._compute_average_rates()
 
-  def _load_inflation(self, path: str) -> dict[str, dict[int, float]]:
+  def _load_inflation(self, path: str) -> dict[str, dict[int, Decimal]]:
     """Load inflation.csv into {column: {year: value}}.
 
     Args:
@@ -47,7 +48,7 @@ class Inflation:
     Returns:
       Dict mapping column name to year -> normalized index value.
     """
-    series: dict[str, dict[int, float]] = {}
+    series: dict[str, dict[int, Decimal]] = {}
     with open(path, 'r') as f:
       reader = csv.DictReader(f)
       for row in reader:
@@ -56,20 +57,20 @@ class Inflation:
           if column == 'Year':
             continue
           if value and value.strip():
-            series.setdefault(column, {})[year] = float(value)
+            series.setdefault(column, {})[year] = Decimal(value)
     return series
 
-  def _compute_average_rates(self) -> dict[str, float]:
+  def _compute_average_rates(self) -> dict[str, Decimal]:
     """Compute the average annual rate for each series.
 
     Returns:
       Dict mapping column name to average annual growth rate (e.g. 0.035 for 3.5%).
     """
-    averages: dict[str, float] = {}
+    averages: dict[str, Decimal] = {}
     for column, year_values in self._series.items():
       years = sorted(year_values)
       rates = [
-        year_values[years[i]] / year_values[years[i - 1]] - 1.0
+        year_values[years[i]] / year_values[years[i - 1]] - 1
         for i in range(1, len(years))
         if years[i] == years[i - 1] + 1
            and year_values[years[i - 1]] > 0
@@ -80,7 +81,7 @@ class Inflation:
     return averages
 
   @cache
-  def average_rate(self, category: BudgetCategory) -> float | None:
+  def average_rate(self, category: BudgetCategory) -> Decimal | None:
     """Return the average inflation rate for a budget category.
 
     Averages annual rates across all mapped inflation.csv columns.
@@ -98,7 +99,7 @@ class Inflation:
     return None
 
   @cache
-  def rate(self, category: BudgetCategory, year: int) -> float:
+  def rate(self, category: BudgetCategory, year: int) -> Decimal:
     """Return the inflation rate for a budget category from year to year + 1.
 
     Falls back to average_rate() when year or year + 1 is outside the dataset, and to
@@ -121,7 +122,7 @@ class Inflation:
       current_value = year_data.get(year)
       next_value = year_data.get(year + 1)
       if current_value and next_value and current_value > 0:
-        year_rates.append(next_value / current_value - 1.0)
+        year_rates.append(next_value / current_value - 1)
 
     if not year_rates:
       fallback = self.average_rate(category)

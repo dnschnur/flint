@@ -15,21 +15,18 @@ federal rates for ordinary income calculations.
 
 import csv
 
+from decimal import Decimal
 from typing import TypeAlias
 
-BracketList: TypeAlias = list[tuple[float, float]]
-CGBracketList: TypeAlias = list[tuple[float, float, bool]]
+from util import parse_percentage
+
+BracketList: TypeAlias = list[tuple[int, Decimal]]
+CGBracketList: TypeAlias = list[tuple[int, Decimal, bool]]
 
 # Annual growth rate applied to inflation-adjusted bracket thresholds when projecting to
 # future years. Based on the historical average IRS inflation adjustment over the past two
 # decades (~2-3%), using a slightly conservative midpoint.
-_BRACKET_GROWTH = 0.025
-
-
-def _parse_rate(value: str) -> float:
-  """Parse a rate string as a percentage (e.g. '10%') or decimal (e.g. '0.10')."""
-  value = value.strip()
-  return float(value[:-1]) / 100.0 if value.endswith('%') else float(value)
+_BRACKET_GROWTH = Decimal('0.025')
 
 
 class Tax:
@@ -68,7 +65,7 @@ class Tax:
       self._load_bracket_list(state_income_tax_path) if state_income_tax_path else []
     )
 
-  def calculate(self, amount: float, year: int, capital_gains: bool = False) -> float:
+  def calculate(self, amount: int | Decimal, year: int, capital_gains: bool = False) -> Decimal:
     """Calculate progressive tax on an amount for a given year.
 
     For ordinary income, combines federal and any loaded state taxes.
@@ -82,7 +79,7 @@ class Tax:
       Total tax owed on the amount.
     """
     if amount <= 0:
-      return 0.0
+      return Decimal(0)
     total = self._calculate_from_brackets(self._project_brackets(year, capital_gains), amount)
     if not capital_gains and self._state_income_brackets:
       total += self._calculate_from_brackets(
@@ -90,7 +87,7 @@ class Tax:
       )
     return total
 
-  def next_ordinary_bracket_threshold(self, income: float, year: int) -> float:
+  def next_ordinary_bracket_threshold(self, income: int, year: int) -> int | None:
     """Returns the next federal ordinary income threshold above the given income level.
 
     Uses federal brackets only, so that small state bracket steps (e.g. CA's 1%→2% at ~$22K)
@@ -109,9 +106,9 @@ class Tax:
       The income level at which the next higher federal ordinary income bracket begins.
     """
     brackets = self._project_brackets(year, capital_gains=False)
-    return next((threshold for threshold, _ in brackets if threshold > income), float('inf'))
+    return next((threshold for threshold, _ in brackets if threshold > income), None)
 
-  def gross_for_net_ordinary(self, net: float, base_income: float, year: int) -> float:
+  def gross_for_net_ordinary(self, net: int, base_income: int, year: int) -> int:
     """Compute the gross 401K/IRA withdrawal that yields exactly 'net' after incremental tax.
 
     Finds the gross amount such that:
@@ -128,18 +125,18 @@ class Tax:
       Gross withdrawal amount >= net.
     """
     if net <= 0:
-      return 0.0
+      return 0
     base_tax = self.calculate(base_income, year)
-    lo, hi = net, net * 3  # gross >= net; 3x covers up to ~67% marginal rate
+    lo, hi = Decimal(net), Decimal(net * 3)  # gross >= net; 3x covers up to ~67% marginal rate
     for _ in range(32):
       mid = (lo + hi) / 2
       if mid - (self.calculate(base_income + mid, year) - base_tax) < net:
         lo = mid
       else:
         hi = mid
-    return (lo + hi) / 2
+    return int(round((lo + hi) / 2))
 
-  def incremental_ordinary_tax(self, base_income: float, additional: float, year: int) -> float:
+  def incremental_ordinary_tax(self, base_income: int, additional: int, year: int) -> int:
     """Returns the incremental ordinary income tax on `additional` layered on top of `base_income`.
 
     Args:
@@ -150,9 +147,9 @@ class Tax:
     Returns:
       The marginal tax on `additional`, including both federal and state taxes.
     """
-    return self.calculate(base_income + additional, year) - self.calculate(base_income, year)
+    return int(round(self.calculate(base_income + additional, year) - self.calculate(base_income, year)))
 
-  def marginal_rate(self, amount: float, year: int, capital_gains: bool = False) -> float:
+  def marginal_rate(self, amount: int, year: int, capital_gains: bool = False) -> Decimal:
     """Returns the marginal tax rate for the given income amount and year.
 
     For ordinary income, combines the federal marginal rate with any loaded state marginal rates.
@@ -166,7 +163,7 @@ class Tax:
       The combined marginal tax rate as a decimal (e.g. 0.24 for 24%).
     """
     if amount <= 0:
-      return 0.0
+      return Decimal(0)
     rate = self._marginal_from_brackets(self._project_brackets(year, capital_gains), amount)
     if not capital_gains and self._state_income_brackets:
       rate += self._marginal_from_brackets(
@@ -174,12 +171,12 @@ class Tax:
       )
     return rate
 
-  def _calculate_from_brackets(self, brackets: BracketList, amount: float) -> float:
+  def _calculate_from_brackets(self, brackets: BracketList, amount: int | Decimal) -> Decimal:
     """Calculate progressive tax for the given amount from a projected bracket list."""
-    total_tax = 0.0
-    remaining = amount
+    total_tax = Decimal(0)
+    remaining = Decimal(amount)
     for i, (threshold, rate) in enumerate(brackets):
-      next_threshold = brackets[i + 1][0] if i + 1 < len(brackets) else float('inf')
+      next_threshold = brackets[i + 1][0] if i + 1 < len(brackets) else Decimal('Infinity')
       taxable_in_bracket = min(remaining, next_threshold - threshold)
       if taxable_in_bracket <= 0:
         continue
@@ -208,8 +205,8 @@ class Tax:
     with open(path, 'r') as f:
       reader = csv.DictReader(f)
       for row in reader:
-        income = float(row['Income'].replace(',', ''))
-        rate = _parse_rate(row['Rate'])
+        income = int(row['Income'].replace(',', ''))
+        rate = parse_percentage(row['Rate'])
         brackets.append((income, rate))
     brackets.sort(key=lambda b: b[0])
     return brackets
@@ -233,14 +230,14 @@ class Tax:
     with open(path, 'r') as f:
       reader = csv.DictReader(f)
       for row in reader:
-        income = float(row['Income'].replace(',', ''))
-        rate = _parse_rate(row['Rate'])
+        income = int(row['Income'].replace(',', ''))
+        rate = parse_percentage(row['Rate'])
         inflation_adjusted = row.get('Inflation Adjusted', 'Yes').strip().lower() != 'no'
         brackets.append((income, rate, inflation_adjusted))
     brackets.sort(key=lambda b: b[0])
     return brackets
 
-  def _marginal_from_brackets(self, brackets: BracketList, amount: float) -> float:
+  def _marginal_from_brackets(self, brackets: BracketList, amount: int) -> Decimal:
     """Return the marginal rate for the given amount from a projected bracket list."""
     rate = brackets[0][1]
     for threshold, bracket_rate in brackets:
@@ -261,7 +258,7 @@ class Tax:
       Projected list with thresholds scaled by the growth factor.
     """
     growth_factor = (1 + _BRACKET_GROWTH) ** (year - self.data_year)
-    return [(threshold * growth_factor, rate) for threshold, rate in brackets]
+    return [(int(round(threshold * growth_factor)), rate) for threshold, rate in brackets]
 
   def _project_brackets(self, year: int, capital_gains: bool) -> BracketList:
     """Return brackets with thresholds projected to the given year.
@@ -276,7 +273,7 @@ class Tax:
     if capital_gains:
       growth_factor = (1 + _BRACKET_GROWTH) ** (year - self.data_year)
       return [
-        (threshold * growth_factor if inflation_adjusted else threshold, rate)
+        (int(round(threshold * growth_factor)) if inflation_adjusted else threshold, rate)
         for threshold, rate, inflation_adjusted in self._cg_brackets
       ]
     return self._project_bracket_list(self._income_brackets, year)

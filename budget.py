@@ -3,65 +3,67 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal
 from enum import Enum
 from functools import cache, cached_property
 from typing import TypeAlias
 
 from assets import AssetCategory
 from rules import parse_rule, Rules
+from util import parse_percentage
 
 
 class BudgetCategory(Enum):
   """Budget categories with associated properties."""
 
   # Mortgage, rent, property taxes, homeowner's insurance, maintenance, home services.
-  HOUSING = ('Housing', 0.03)
+  HOUSING = ('Housing', '3%')
 
   # Electricity, gas, water, internet, phone.
-  UTILITIES = ('Utilities', 0.04)
+  UTILITIES = ('Utilities', '4%')
 
   # Vehicle purchases or payments, insurance, fuel, maintenance.
-  TRANSPORTATION = ('Transportation', 0.04)
+  TRANSPORTATION = ('Transportation', '4%')
 
   # Groceries, restaurants, alcohol, snacks, desserts.
-  FOOD = ('Food', 0.03)
+  FOOD = ('Food', '3%')
 
   # Health insurance, medical and medication expenses.
-  HEALTH = ('Health', 0.05)
+  HEALTH = ('Health', '5%')
 
   # Personal or children's tuition, supplies, room & board, after-school activities.
-  SCHOOL = ('School', 0.04)
+  SCHOOL = ('School', '4%')
 
   # Child care (if not categorized as school), activities, supplies.
-  CHILDREN = ('Children', 0.04)
+  CHILDREN = ('Children', '4%')
 
   # Credit card and other debt payments not included in housing or transportation.
-  DEBT = ('Debt', 0.0)
+  DEBT = ('Debt', '0%')
 
   # Expenses associated with operating a self-owned business.
-  BUSINESS = ('Business', 0.0)
+  BUSINESS = ('Business', '0%')
 
   # Any other expenses not included in the categories above.
-  OTHER = ('Other', 0.03)
+  OTHER = ('Other', '3%')
 
   # Contributions to asset classes.
-  PRE_TAX_401K = ('Pre-Tax 401K', 0.02, AssetCategory.PLAN_401K)
-  AFTER_TAX_401K = ('After-Tax 401K', 0.02, AssetCategory.PLAN_401K)
-  ROTH_401K = ('Roth 401K', 0.02, AssetCategory.ROTH_401K)
-  IRA = ('IRA', 0.02, AssetCategory.IRA)
-  ROTH_IRA = ('Roth IRA', 0.02, AssetCategory.ROTH_IRA)
-  PLAN_529 = ('529 Plan', 0.02, AssetCategory.PLAN_529)
-  HSA = ('HSA', 0.02, AssetCategory.HSA)
-  STOCKS = ('Stocks', 0.02, AssetCategory.STOCKS)
-  BONDS = ('Bonds', 0.02, AssetCategory.BONDS)
+  PRE_TAX_401K = ('Pre-Tax 401K', '2%', AssetCategory.PLAN_401K)
+  AFTER_TAX_401K = ('After-Tax 401K', '2%', AssetCategory.PLAN_401K)
+  ROTH_401K = ('Roth 401K', '2%', AssetCategory.ROTH_401K)
+  IRA = ('IRA', '2%', AssetCategory.IRA)
+  ROTH_IRA = ('Roth IRA', '2%', AssetCategory.ROTH_IRA)
+  PLAN_529 = ('529 Plan', '2%', AssetCategory.PLAN_529)
+  HSA = ('HSA', '2%', AssetCategory.HSA)
+  STOCKS = ('Stocks', '2%', AssetCategory.STOCKS)
+  BONDS = ('Bonds', '2%', AssetCategory.BONDS)
 
   # Employer 401K match. Either a fixed dollar amount per year, or a percentage of the pre-tax
   # 401K contribution (e.g. '50%'). Not deducted from income.
-  EMPLOYER_401K_MATCH = ('Employer 401K Match', 0.02, AssetCategory.PLAN_401K)
+  EMPLOYER_401K_MATCH = ('Employer 401K Match', '2%', AssetCategory.PLAN_401K)
 
-  def __init__(self, display_name: str, inflation: float, asset_category: 'AssetCategory | None' = None):
+  def __init__(self, display_name: str, inflation: str, asset_category: 'AssetCategory | None' = None):
     self.display_name = display_name
-    self.inflation = inflation
+    self.inflation: Decimal = parse_percentage(inflation)
     self.asset_category = asset_category
 
   @staticmethod
@@ -72,9 +74,9 @@ class BudgetCategory(Enum):
     Raises:
       ValueError: If there is no budget category with the given name.
     """
-    for cat in BudgetCategory:
-      if cat.display_name == name:
-        return cat
+    for category in BudgetCategory:
+      if category.display_name == name:
+        return category
     raise ValueError(f'Unrecognized budget category "{name}".')
 
   @cached_property
@@ -102,7 +104,7 @@ class BudgetCategory(Enum):
     }
 
 
-BudgetDict: TypeAlias = dict[BudgetCategory, float]
+BudgetDict: TypeAlias = dict[BudgetCategory, int]
 
 
 def _parse_budget_category(name: str) -> BudgetCategory:
@@ -119,13 +121,6 @@ def _parse_budget_category(name: str) -> BudgetCategory:
   except KeyError:
     return BudgetCategory.from_name(name)
 
-
-def _parse_fraction(value) -> float:
-  """Parse a fraction value from a percentage string (e.g. '100%') or a plain number."""
-  value_str = str(value).strip()
-  if value_str.endswith('%'):
-    return float(value_str[:-1]) / 100.0
-  return float(value_str)
 
 
 class Budget:
@@ -167,28 +162,28 @@ class Budget:
     self._rules: defaultdict[BudgetCategory, Rules] = defaultdict(Rules)
 
     # Fraction of the School budget eligible to be paid from a 529 plan, by year.
-    self._529_eligible: dict[int, float] = {}
+    self._529_eligible: dict[int, Decimal] = {}
 
     # Employer 401K match as a fraction of the employee's pre-tax 401K contribution, by year.
     # Only populated when the 'Employer 401K Match' value is a plain percentage (e.g. '50%').
     # Fixed dollar amounts use the EMPLOYER_401K_MATCH budget category instead.
-    self._employer_match_fraction: dict[int, float] = {}
+    self._employer_match_fraction: dict[int, Decimal] = {}
 
     # Per-category inflation rate overrides (fraction, e.g. 0.05 for 5%).
-    self._inflation: dict[BudgetCategory, float] = {}
+    self._inflation: dict[BudgetCategory, Decimal] = {}
 
     for key, value in data.items():
       if key in ('rules', 'growth'):
         continue
       if key in ('529 Eligible', '529_eligible'):
-        self._529_eligible[base_year] = _parse_fraction(value)
+        self._529_eligible[base_year] = parse_percentage(value)
       elif key in ('Employer 401K Match', 'employer_401k_match'):
         self._load_employer_match(base_year, value, update_amounts=True)
       else:
-        self._amounts[_parse_budget_category(key)] = float(value)
+        self._amounts[_parse_budget_category(key)] = int(value)
 
     for key, value in data.get('growth', {}).items():
-      self._inflation[_parse_budget_category(key)] = float(value) / 100.0
+      self._inflation[_parse_budget_category(key)] = Decimal(value) / 100
 
     # Use historical averages for categories without an explicit override.
     if inflation:
@@ -206,7 +201,7 @@ class Budget:
         if key in ('529 Eligible', '529_eligible'):
           if Rules.is_retirement_spec(year_spec):
             raise ValueError('"529 Eligible" does not support retirement-relative years')
-          self._529_eligible[int(year_spec)] = _parse_fraction(value)
+          self._529_eligible[int(year_spec)] = parse_percentage(value)
         elif key in ('Employer 401K Match', 'employer_401k_match'):
           if Rules.is_retirement_spec(year_spec):
             raise ValueError('"Employer 401K Match" does not support retirement-relative years')
@@ -236,18 +231,18 @@ class Budget:
         and value_str.endswith('%')
         and not value_str.startswith(('+', '-', '='))):
       # Plain percentage (e.g. '50%'): a fraction of the employee's pre-tax 401K contribution.
-      self._employer_match_fraction[year] = float(value_str[:-1]) / 100.0
+      self._employer_match_fraction[year] = parse_percentage(value_str)
       if update_amounts:
-        self._amounts[BudgetCategory.EMPLOYER_401K_MATCH] = 0.0
+        self._amounts[BudgetCategory.EMPLOYER_401K_MATCH] = 0
     elif isinstance(value, str) and (rule := parse_rule(value_str)):
       # Rule string (e.g. '=60000', '+5%'): sets the dollar-amount side.
-      self._employer_match_fraction[year] = 0.0
+      self._employer_match_fraction[year] = Decimal(0)
       self._rules[BudgetCategory.EMPLOYER_401K_MATCH].add(year_spec, rule)
     else:
       # Plain number: fixed dollar match.
-      self._employer_match_fraction[year] = 0.0
+      self._employer_match_fraction[year] = Decimal(0)
       if update_amounts:
-        self._amounts[BudgetCategory.EMPLOYER_401K_MATCH] = float(value)
+        self._amounts[BudgetCategory.EMPLOYER_401K_MATCH] = int(value)
       else:
         if rule := parse_rule(value):
           self._rules[BudgetCategory.EMPLOYER_401K_MATCH].add(year_spec, rule)
@@ -256,11 +251,11 @@ class Budget:
     self,
     category: BudgetCategory,
     year: int,
-    amount: float,
-    inflation: float | None,
+    amount: int,
+    inflation: Decimal | None,
     retirement_year: int,
-  ) -> float:
-    """Advance a budget amount by one year, applying any rule at that year and an inflation rate.
+  ) -> int:
+    """Advance a budget amount by one year, applying any rules at that year and an inflation rate.
 
     Args:
       category: The budget category.
@@ -279,16 +274,16 @@ class Budget:
     return self._rules[category].apply(amount, year, retirement_year, inflation)
 
   @cache
-  def get_category(self, category: BudgetCategory, year: int, retirement_year: int) -> float:
+  def get_category(self, category: BudgetCategory, year: int, retirement_year: int) -> int:
     """Returns the amount for a category in a given year, defaulting to zero."""
     if year == self.base_year:
-      return self._amounts.get(category, 0.0)
+      return self._amounts.get(category, 0)
     if year > self.base_year:
       return self._project_category(category, year, retirement_year)
-    return 0.0
+    return 0
 
   @cache
-  def get_529_eligible_fraction(self, year: int) -> float:
+  def get_529_eligible_fraction(self, year: int) -> Decimal:
     """Returns the fraction of the School budget eligible to be paid from a 529 plan.
 
     Uses step-function semantics: the last entry at or before the given year stays in effect
@@ -303,7 +298,7 @@ class Budget:
     return Budget._step_function_lookup(self._529_eligible, year)
 
   @cache
-  def get_employer_match_fraction(self, year: int) -> float:
+  def get_employer_match_fraction(self, year: int) -> Decimal:
     """Returns the employer 401K match as a fraction of the employee's pre-tax contribution.
 
     Uses step-function semantics: the last entry at or before the given year stays in effect
@@ -319,14 +314,14 @@ class Budget:
     return Budget._step_function_lookup(self._employer_match_fraction, year)
 
   @staticmethod
-  def _step_function_lookup(data: dict[int, float], year: int) -> float:
-    """Returns the value for the largest key in data that is still <= year, or 0.0."""
+  def _step_function_lookup(data: dict[int, Decimal], year: int) -> Decimal:
+    """Returns the value for the largest key in data that is still <= year, or Decimal(0)."""
     eligible_years = [y for y in data if y <= year]
     if not eligible_years:
-      return 0.0
+      return Decimal(0)
     return data[max(eligible_years)]
 
-  def _project_category(self, category: BudgetCategory, year: int, retirement_year: int) -> float:
+  def _project_category(self, category: BudgetCategory, year: int, retirement_year: int) -> int:
     """Returns the projected budget for a category in a future year.
 
     Applies rules in order from the base year to the target year. Default inflation is
@@ -340,7 +335,7 @@ class Budget:
     Returns:
       The projected budget amount for the category in the given year.
     """
-    amount = self._amounts.get(category, 0.0)
+    amount = self._amounts.get(category, 0)
     inflation = self._inflation.get(category, category.inflation)
     for i in range(self.base_year + 1, year + 1):
       amount = self.advance(category, i, amount, inflation, retirement_year)
