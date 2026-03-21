@@ -77,6 +77,18 @@ main {
   margin-bottom: 16px;
 }
 
+#histogram,
+.stats-grid,
+.year-input {
+  transition: opacity 0.2s;
+}
+
+#view-overview.running #histogram,
+#view-overview.running .stats-grid,
+#view-overview.running .year-input {
+  opacity: 0.5;
+}
+
 .stat-card {
   padding: 18px 22px;
 }

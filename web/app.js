@@ -819,6 +819,8 @@ async function switchScenario(name) {
   }
 
   isRunning = true;
+  setAgeInputsDisabled(true);
+  document.getElementById('view-overview').classList.add('running');
   try {
     const response = await fetch(`/simulate?scenario=${encodeURIComponent(name)}`);
     const data = await response.json();
@@ -834,7 +836,14 @@ async function switchScenario(name) {
     error.textContent = 'Failed to connect to server.';
   } finally {
     isRunning = false;
+    setAgeInputsDisabled(false);
+    document.getElementById('view-overview').classList.remove('running');
   }
+}
+
+function setAgeInputsDisabled(disabled) {
+  document.getElementById('input-retirement-age').disabled = disabled;
+  document.getElementById('input-end-age').disabled = disabled;
 }
 
 /**
@@ -873,6 +882,8 @@ async function triggerRun() {
   }
 
   isRunning = true;
+  setAgeInputsDisabled(true);
+  document.getElementById('view-overview').classList.add('running');
   try {
     const response = await fetch(`/simulate?start_year=${startYear}&end_year=${endYear}`);
     const data = await response.json();
@@ -886,6 +897,8 @@ async function triggerRun() {
     error.textContent = 'Failed to connect to server.';
   } finally {
     isRunning = false;
+    setAgeInputsDisabled(false);
+    document.getElementById('view-overview').classList.remove('running');
   }
 }
 
