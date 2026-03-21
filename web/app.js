@@ -42,7 +42,8 @@ function formatMoney(amount) {
   const sign = amount < 0 ? '-' : '';
   const absAmount = Math.abs(amount);
   const formatted = absAmount >= 1e6 ? parseFloat((absAmount / 1e6).toFixed(2)) + 'M'
-                  : absAmount >= 1e3 ? (absAmount / 1e3).toFixed(0) + 'K'
+                  : absAmount >= 1e4 ? (absAmount / 1e3).toFixed(0) + 'K'
+                  : absAmount >= 1e3 ? (absAmount / 1e3).toFixed(1) + 'K'
                   : absAmount.toFixed(0);
   return sign + '$' + formatted;
 }
