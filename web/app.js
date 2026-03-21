@@ -148,6 +148,14 @@ function drawHistogram(totals, startingTotal, median, results, retirementLength)
   const xScale = value => HISTOGRAM_MARGIN.left + ((value - minVal) / span) * HISTOGRAM_WIDTH;
   const barWidth = HISTOGRAM_WIDTH / HISTOGRAM_BINS;
 
+  // Y-axis title
+  const axisLabelY = HISTOGRAM_MARGIN.top + HISTOGRAM_HEIGHT / 2;
+  const axisLabel = svgText(14, axisLabelY, '% of simulations', {
+    'text-anchor': 'middle', fill: '#8b949e', 'font-size': '10',
+    transform: `rotate(-90, 14, ${axisLabelY})`,
+  });
+  svg.appendChild(axisLabel);
+
   // Y-axis grid + labels
   const Y_STEPS = 4;
   for (let i = 0; i <= Y_STEPS; i++) {
