@@ -61,9 +61,9 @@ class BudgetCategory(Enum):
   # 401K contribution (e.g. '50%'). Not deducted from income.
   EMPLOYER_401K_MATCH = ('Employer 401K Match', '2%', AssetCategory.PLAN_401K)
 
-  def __init__(self, display_name: str, inflation: str, asset_category: 'AssetCategory | None' = None):
+  def __init__(self, display_name: str, growth: str, asset_category: 'AssetCategory | None' = None):
     self.display_name = display_name
-    self.inflation: Decimal = parse_percentage(inflation)
+    self.growth: Decimal = parse_percentage(growth)
     self.asset_category = asset_category
 
   @staticmethod
@@ -120,7 +120,6 @@ def _parse_budget_category(name: str) -> BudgetCategory:
     return BudgetCategory[name.upper()]
   except KeyError:
     return BudgetCategory.from_name(name)
-
 
 
 class Budget:
@@ -270,7 +269,7 @@ class Budget:
       The budget amount for the given category in the given year.
     """
     if inflation is None:
-      inflation = self._inflation.get(category, category.inflation)
+      inflation = self._inflation.get(category, category.growth)
     return self._rules[category].apply(amount, year, retirement_year, inflation)
 
   @cache
@@ -336,7 +335,7 @@ class Budget:
       The projected budget amount for the category in the given year.
     """
     amount = self._amounts.get(category, 0)
-    inflation = self._inflation.get(category, category.inflation)
+    inflation = self._inflation.get(category, category.growth)
     for i in range(self.base_year + 1, year + 1):
       amount = self.advance(category, i, amount, inflation, retirement_year)
     return amount

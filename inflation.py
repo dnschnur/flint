@@ -103,7 +103,7 @@ class Inflation:
     """Return the inflation rate for a budget category from year to year + 1.
 
     Falls back to average_rate() when year or year + 1 is outside the dataset, and to
-    category.inflation if there is no average available.
+    category.growth if there is no average available.
 
     Args:
       category: The budget category.
@@ -114,7 +114,7 @@ class Inflation:
     """
     columns = _INFLATION_COLUMNS.get(category, [])
     if not columns:
-      return category.inflation
+      return category.growth
 
     year_rates = []
     for column in columns:
@@ -126,6 +126,6 @@ class Inflation:
 
     if not year_rates:
       fallback = self.average_rate(category)
-      return fallback if fallback is not None else category.inflation
+      return fallback if fallback is not None else category.growth
 
     return sum(year_rates) / len(year_rates)
