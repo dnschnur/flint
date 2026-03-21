@@ -386,8 +386,14 @@ class Strategy:
     if not total_weight:
       return shortfall
     frozen = shortfall
-    for category, balance in pool.items():
-      net_target = int(round(frozen * weights[category] / total_weight))
+    allocated = 0
+    categories = list(pool.items())
+    for i, (category, balance) in enumerate(categories):
+      if i < len(categories) - 1:
+        net_target = int(round(frozen * weights[category] / total_weight))
+      else:
+        net_target = max(0, frozen - allocated)  # give exact remainder to last to avoid rounding gaps
+      allocated += net_target
       gross, net_covered = compute_gross(category, balance, net_target)
       finances.assets[category] = balance - gross
       shortfall -= net_covered
@@ -471,7 +477,21 @@ class Strategy:
       withdrawal = min(balance, net_target)
       return withdrawal, withdrawal
 
-    return self._withdraw_proportional(finances, pool, shortfall, pool, compute_gross)
+    shortfall = self._withdraw_proportional(finances, pool, shortfall, pool, compute_gross)
+
+    # Sequential cleanup: proportional allocation may leave un-tapped balance when an OI
+    # account's gross-up requirement exceeds its balance. Drain any remaining shortfall from
+    # whatever pool accounts still have balance after the proportional pass.
+    for category in pool:
+      if not shortfall:
+        break
+      remaining = finances.assets[category]
+      if remaining > 0:
+        gross, net_covered = compute_gross(category, remaining, shortfall)
+        finances.assets[category] -= gross
+        shortfall -= net_covered
+
+    return shortfall
 
   def _cover_fallback_pool(
     self,
@@ -504,8 +524,9 @@ class Strategy:
         return gross, net_covered
       multiplier = _withdrawal_multiplier(
           category, self.tax, finances.running_income, year, cg_fraction)
-      gross = min(balance, int(round(net_target * multiplier)))
-      net_covered = int(round(gross / multiplier))
-      return gross, net_covered
+      target_gross = int(round(net_target * multiplier))
+      if target_gross <= balance:
+        return target_gross, net_target  # fully covered; skip round-trip to avoid losing $1
+      return balance, int(round(balance / multiplier))
 
     return self._withdraw_proportional(finances, pool, shortfall, pool, compute_gross)
