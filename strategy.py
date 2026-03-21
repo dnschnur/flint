@@ -367,8 +367,18 @@ class Strategy:
     shortfall: int,
     weights: dict[AssetCategory, int],
     compute_gross: Callable[[AssetCategory, int, int], tuple[int, int]],
+    cleanup: bool = True,
   ) -> int:
     """Withdraw proportionally from pool to cover shortfall. Returns remaining shortfall.
+
+    Proportional allocation assigns each account a share of the shortfall based on its weight.
+    When cleanup=True (the default), a second sequential pass drains any remaining shortfall
+    from accounts that still have balance after the proportional pass - for example, when an
+    OI account's gross-up exceeds its balance, or when the last-assigned account is small and
+    drains before covering its full target.
+
+    Pass callers that intentionally leave shortfall for subsequent passes (e.g. the bracket-capped
+    taxable pass, which defers to the tax-free pass) should pass cleanup=False.
 
     Args:
       finances: Current financial state; finances.assets is mutated in place.
@@ -378,6 +388,8 @@ class Strategy:
           Often equal to pool; may differ when proportioning by effective (post-tax) balances.
       compute_gross: Called as compute_gross(category, balance, net_target); returns
           (gross_withdrawal, net_covered). Responsible for balance capping and tax gross-up.
+      cleanup: If True (default), after the proportional pass make a sequential sweep to drain
+          any remaining shortfall from pool accounts that still have balance.
 
     Returns:
       Remaining shortfall after withdrawals.
@@ -397,6 +409,15 @@ class Strategy:
       gross, net_covered = compute_gross(category, balance, net_target)
       finances.assets[category] = balance - gross
       shortfall -= net_covered
+    if cleanup:
+      for category in pool:
+        if not shortfall:
+          break
+        remaining = finances.assets[category]
+        if remaining > 0:
+          gross, net_covered = compute_gross(category, remaining, shortfall)
+          finances.assets[category] -= gross
+          shortfall -= net_covered
     return shortfall
 
   def _cover_taxable_pool(
@@ -452,7 +473,8 @@ class Strategy:
       gross = int(round(net_target * multiplier))
       return gross, net_target
 
-    return self._withdraw_proportional(finances, pool, shortfall, effective, compute_gross)
+    # No cleanup: the bracket-capped remainder is intentionally deferred to the tax-free pass.
+    return self._withdraw_proportional(finances, pool, shortfall, effective, compute_gross, cleanup=False)
 
   def _cover_tax_free_pool(self, finances: Finances, shortfall: int, age: int) -> int:
     """Pass 2: proportional withdrawal from tax-free accounts (Bonds, Cash, Roth).
@@ -477,20 +499,7 @@ class Strategy:
       withdrawal = min(balance, net_target)
       return withdrawal, withdrawal
 
-    shortfall = self._withdraw_proportional(finances, pool, shortfall, pool, compute_gross)
-
-    # Sequential cleanup: if a small last-assigned category drains before covering its target,
-    # any larger earlier account with remaining balance can absorb the residual shortfall.
-    for category in pool:
-      if not shortfall:
-        break
-      remaining = finances.assets[category]
-      if remaining > 0:
-        gross, net_covered = compute_gross(category, remaining, shortfall)
-        finances.assets[category] -= gross
-        shortfall -= net_covered
-
-    return shortfall
+    return self._withdraw_proportional(finances, pool, shortfall, pool, compute_gross)
 
   def _cover_fallback_pool(
     self,
