@@ -251,7 +251,6 @@ class Simulation:
     basis = initial_stocks * (1 - self.assets.base_cg_fraction)
 
     # Stock budget contributions during pre-retirement are pure cost basis.
-    # TODO: this doesn't factor in cash contributions reinvested as stock!
     for year in range(self.data_year, start_year):
       basis += self.budget.get_category(BudgetCategory.STOCKS, year, retirement_year=start_year)
 
@@ -328,10 +327,13 @@ class Simulation:
       if real_estate_before and not current_assets[AssetCategory.REAL_ESTATE]:
         real_estate_liquidated = True
 
-      # After withdrawals, reduce basis proportionally to the Stocks balance reduction.
+      # After strategy: update cost basis to reflect purchases and withdrawals.
       # Market growth (applied below in apply_year) leaves basis unchanged — all growth is gains.
       new_stocks = current_assets.get(AssetCategory.STOCKS, 0)
-      if old_stocks and new_stocks < old_stocks:
+      if new_stocks > old_stocks:
+        # Surplus reinvested into Stocks is a new purchase at full cost basis (no gains yet).
+        stock_basis += new_stocks - old_stocks
+      elif old_stocks and new_stocks < old_stocks:
         # This doesn't use *= because otherwise new_stocks / old_stocks produces a float, which we
         # can't multiply with stock_basis, which is (and should remain) a Decimal. Starting with
         # stock_basis on the right-hand-side forces the use of Decimal for intermediate values.
