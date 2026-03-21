@@ -181,7 +181,7 @@ def parse_rule(value: str | int) -> Rule | None:
       category = AssetCategory.from_name(category_name)
       rule = AdjustByFractionOfOther(category, Decimal(amount_part[:-1]) / 100)
     else:
-      return None
+      raise ValueError(f'Invalid cross-category rule: {value!r}')
   # SetAmount: =###
   elif rule_str.startswith('='):
     rule = SetAmount(int(rule_str[1:]))
@@ -192,7 +192,7 @@ def parse_rule(value: str | int) -> Rule | None:
   elif rule_str.startswith(('+', '-')):
     rule = AdjustByAmount(int(rule_str))
   else:
-    return None
+    raise ValueError(f'Unrecognized rule format: {value!r}')
 
   if growth_override is not None:
     rule.apply_growth = growth_override
