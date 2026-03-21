@@ -924,6 +924,12 @@ async function init() {
     showDetailView(sorted[Math.floor(sorted.length / 2)]);
   });
 
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !document.getElementById('view-detail').hidden) {
+      hideDetailView();
+    }
+  });
+
   renderOverview();
 }
 
