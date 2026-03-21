@@ -45,7 +45,7 @@ python flint.py [options]
 
 | Option | Description | Default |
 |---|---|---|
-| `--scenario NAME` | Load `scenarios/<name>.toml` | First scenario alphabetically; falls back to `default` |
+| `--scenario NAME` | Load `scenarios/<name>.toml` | First non-default scenario alphabetically; falls back to `default` |
 | `--sp500-start YEAR` | Minimum year for historical S&P 500 data | Earliest available (1871) |
 | `--sp500-end YEAR` | Maximum year for historical S&P 500 data | Latest available |
 | `--port PORT` | Port for the local web server | 8080 |
@@ -210,6 +210,13 @@ Each category inflates independently each year using its own default rate.
 
 Healthcare inflates at 5% by default (significantly faster than overall inflation) to reflect the
 real historical trend of medical costs outpacing overall inflation.
+
+These rates are defaults. When historical CPI data is available, Flint uses actual historical
+averages per category instead (computed from the same dataset that drives the S&P 500 simulation),
+and during each Monte Carlo retirement replay, expenses grow at the inflation rate that actually
+prevailed during that historical period. A scenario where the market performed as it did in the
+1970s also inflates your expenses at 1970s rates. The `[budget.growth]` overrides described below
+always take precedence over both defaults and historical averages.
 
 Override any category's rate with `[budget.growth]`:
 
