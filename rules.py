@@ -5,10 +5,10 @@ Growth behavior
 After a rule is applied, the caller may also apply a default growth or inflation rate. Each rule
 has an apply_growth property that controls this:
 
-  - SetAmount:               apply_growth defaults to False (the set value is treated as final)
-  - AdjustByPercentage:      apply_growth defaults to True (the adjustment is a delta; growth follows)
-  - AdjustByAmount:          apply_growth defaults to True (the adjustment is a delta; growth follows)
-  - AdjustByFractionOfOther: apply_growth defaults to True (the adjustment is a delta; growth follows)
+  - SetAmount:               apply_growth defaults to False (set value is treated as final)
+  - AdjustByPercentage:      apply_growth defaults to True (adjustment is a delta; growth follows)
+  - AdjustByAmount:          apply_growth defaults to True (adjustment is a delta; growth follows)
+  - AdjustByFractionOfOther: apply_growth defaults to True (adjustment is a delta; growth follows)
 
 Either default can be overridden with a suffix on the rule string:
   - "!" suppresses growth (apply_growth=False)

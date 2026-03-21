@@ -161,8 +161,8 @@ class Strategy:
       4. Process budget items (expenses and after-tax contributions)
       5. Withdraw from 529 to cover 529-eligible school expenses (always, to avoid waste)
       6. Cover any shortfall:
-           Pre-retirement: HSA → liquid assets in priority order (Cash → Bonds → Stocks)
-           Retirement: HSA → taxable pool → tax-free pool → fallback pool → Real Estate → Cash
+           Pre-retirement: HSA -> liquid assets in priority order (Cash -> Bonds -> Stocks)
+           Retirement: HSA -> taxable pool -> tax-free pool -> fallback pool -> Real Estate -> Cash
       7. Reinvest any retirement surplus (50% to Stocks; remainder to Cash)
 
     Pre-retirement:
@@ -325,10 +325,10 @@ class Strategy:
     cg_fraction: Decimal,
   ) -> None:
     """Cover a retirement shortfall in order:
-    HSA → taxable pool → tax-free pool → fallback pool → Real Estate → Cash.
+    HSA -> taxable pool -> tax-free pool -> fallback pool -> Real Estate -> Cash.
 
-    Initializes finances.running_income to finances.taxable_income and advances it with each ordinary
-    income withdrawal so that successive withdrawals are taxed at the correct marginal bracket.
+    Initializes running_income to taxable_income and advances it with each ordinary income
+    withdrawal so that successive withdrawals are taxed at the correct marginal bracket.
     """
     finances.running_income = finances.taxable_income
     shortfall = -finances.remaining
@@ -338,8 +338,10 @@ class Strategy:
     shortfall = self._cover_tax_free_pool(finances, shortfall, age)
     shortfall = self._cover_fallback_pool(finances, shortfall, year, age, cg_fraction)
 
+    bankrupt = shortfall and finances.assets[AssetCategory.CASH] <= 0
+
     # Liquidate Real Estate before going into debt if cash is already depleted.
-    if shortfall and finances.assets[AssetCategory.CASH] <= 0 and finances.assets[AssetCategory.REAL_ESTATE]:
+    if bankrupt and finances.assets[AssetCategory.REAL_ESTATE]:
       shortfall -= finances.assets[AssetCategory.REAL_ESTATE]
       finances.assets[AssetCategory.REAL_ESTATE] = 0
 
@@ -404,7 +406,7 @@ class Strategy:
       if i < len(categories) - 1:
         net_target = int(round(frozen * weights[category] / total_weight))
       else:
-        net_target = max(0, frozen - allocated)  # give exact remainder to last to avoid rounding gaps
+        net_target = max(0, frozen - allocated)  # Exact remainder to last, to avoid rounding gaps
       allocated += net_target
       gross, net_covered = compute_gross(category, balance, net_target)
       finances.assets[category] = balance - gross
@@ -474,7 +476,8 @@ class Strategy:
       return gross, net_target
 
     # No cleanup: the bracket-capped remainder is intentionally deferred to the tax-free pass.
-    return self._withdraw_proportional(finances, pool, shortfall, effective, compute_gross, cleanup=False)
+    return self._withdraw_proportional(
+        finances, pool, shortfall, effective, compute_gross, cleanup=False)
 
   def _cover_tax_free_pool(self, finances: Finances, shortfall: int, age: int) -> int:
     """Pass 2: proportional withdrawal from tax-free accounts (Bonds, Cash, Roth).

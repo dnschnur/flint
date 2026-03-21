@@ -147,7 +147,9 @@ class Tax:
     Returns:
       The marginal tax on `additional`, including both federal and state taxes.
     """
-    return int(round(self.calculate(base_income + additional, year) - self.calculate(base_income, year)))
+    base_income_tax = self.calculate(base_income, year)
+    additional_income_tax = self.calculate(base_income + additional, year)
+    return int(round(additional_income_tax - base_income_tax))
 
   def marginal_rate(self, amount: int, year: int, capital_gains: bool = False) -> Decimal:
     """Returns the marginal tax rate for the given income amount and year.

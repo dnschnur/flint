@@ -27,6 +27,8 @@ FRED_DELAY   = 1     # Seconds between FRED requests
 BLS_DELAY    = 2     # Seconds between BLS API requests (stricter rate limit)
 MIN_OVERLAP  = 5     # Minimum overlap years required for a backfill delta
 
+HTTP_USER_AGENT = 'python-flint/1.0'
+
 # FRED series: (fred_series_id, column_name)
 # Monthly and quarterly series are automatically averaged to annual.
 FRED_SERIES = [
@@ -58,7 +60,7 @@ FRED_SERIES = [
   ('CUSR0000SEEB',     'CPI_TuitionChildcare'), # Tuition, school fees, childcare; starts Dec 1977
 ]
 
-# BLS series not available on FRED — fetched directly from BLS API v1.
+# BLS series not available on FRED - fetched directly from BLS API v1.
 # (bls_series_id, column_name, first_year_available)
 BLS_SERIES = [
   # CUUR0000SETE: Motor vehicle insurance (not seasonally adjusted)
@@ -158,7 +160,7 @@ def fetch_fred(series_id: str) -> dict[str, float]:
   time.sleep(FRED_DELAY)
 
   try:
-    request = urllib.request.Request(url, headers={'User-Agent': 'python-flint/1.0'})
+    request = urllib.request.Request(url, headers={'User-Agent': HTTP_USER_AGENT})
     with urllib.request.urlopen(request, timeout=30) as response:
       text = response.read().decode('utf-8')
 
@@ -200,7 +202,7 @@ def fetch_bls(series_id: str, first_year: int) -> dict[str, float]:
     }).encode()
 
     url = 'https://api.bls.gov/publicAPI/v1/timeseries/data/'
-    headers = {'Content-Type': 'application/json', 'User-Agent': 'python-flint/1.0'}
+    headers = {'Content-Type': 'application/json', 'User-Agent': HTTP_USER_AGENT}
 
     try:
       time.sleep(BLS_DELAY)
@@ -308,7 +310,7 @@ def backfill_series(
   ]
 
   if len(overlap) < min_overlap:
-    print(f'    WARNING: only {len(overlap)} overlap year(s) — skipping step', file=sys.stderr)
+    print(f'    WARNING: only {len(overlap)} overlap year(s) - skipping step', file=sys.stderr)
     return primary
 
   delta = mean(
@@ -336,8 +338,7 @@ def main() -> None:
   print('Fetching from FRED (fred.stlouisfed.org)…')
   for fred_id, col in FRED_SERIES:
     print(f'  {fred_id:30s} -> {col}')
-    raw = fetch_fred(fred_id)
-    if raw:
+    if raw := fetch_fred(fred_id):
       annual = to_annual(raw)
       series[col] = normalize(annual, BASE_YEAR)
       print(f'    {min(annual)}–{max(annual)}  ({len(annual)} years)')
@@ -347,8 +348,7 @@ def main() -> None:
   print('\nFetching from BLS API (api.bls.gov)…')
   for bls_id, col, first_year in BLS_SERIES:
     print(f'  {bls_id:30s} -> {col}  (from {first_year})')
-    raw = fetch_bls(bls_id, first_year)
-    if raw:
+    if raw := fetch_bls(bls_id, first_year):
       annual = to_annual(raw)
       series[col] = normalize(annual, BASE_YEAR)
       print(f'    {min(annual)}–{max(annual)}  ({len(annual)} years)')
@@ -367,7 +367,7 @@ def main() -> None:
 
   all_years = sorted({year for serie in series.values() for year in serie})
   if not all_years:
-    print('\nERROR: no data fetched — nothing to write.', file=sys.stderr)
+    print('\nERROR: no data fetched - nothing to write.', file=sys.stderr)
     sys.exit(1)
 
   print(f'\nWriting {OUTPUT_PATH}  ({all_years[0]}–{all_years[-1]})…')
@@ -375,7 +375,7 @@ def main() -> None:
     writer = csv.writer(f)
     writer.writerow(['Year'] + ALL_COLUMNS)
     for year in all_years:
-      row: list = [year]
+      row = [year]
       for col in ALL_COLUMNS:
         val = series.get(col, {}).get(year)
         row.append(f'{val:.4f}' if val is not None else '')

@@ -70,16 +70,18 @@ def _resolve_tax_paths(country: str, state: str | None) -> tuple[str, str, str |
     if not os.path.exists(state_path):
       raise FileNotFoundError(f'State tax file not found: {state_path}')
 
-  return os.path.join(base, 'income_tax.csv'), os.path.join(base, 'capital_gains_tax.csv'), state_path
+  return (
+      os.path.join(base, 'income_tax.csv'),
+      os.path.join(base, 'capital_gains_tax.csv'),
+      state_path
+  )
 
 
-def _init_scenario(name: str, sp500_start: int | None, sp500_end: int | None) -> dict:
+def _init_scenario(name: str) -> dict:
   """Load a scenario by name and initialize all simulation objects.
 
   Args:
     name: Scenario name (without .toml extension).
-    sp500_start: Minimum year for S&P 500 data, or None for earliest available.
-    sp500_end: Maximum year for S&P 500 data, or None for latest available.
 
   Returns:
     A context dict with keys: name, sim, base_year, age,
@@ -124,8 +126,6 @@ def _init_scenario(name: str, sp500_start: int | None, sp500_end: int | None) ->
     current_age=age,
     data_year=base_year,
     sp500_path='data/us/sp500.csv',
-    simulation_min_year=sp500_start,
-    simulation_max_year=sp500_end,
     inflation=inflation,
   )
 
@@ -150,18 +150,6 @@ def main():
     help='Scenario name: reads from scenarios/<name>.toml (default: first non-default scenario)'
   )
   parser.add_argument(
-    '--sp500-start',
-    type=int,
-    default=None,
-    help='Minimum year for S&P 500 historical data (default: earliest available)'
-  )
-  parser.add_argument(
-    '--sp500-end',
-    type=int,
-    default=None,
-    help='Maximum year for S&P 500 historical data (default: latest available)'
-  )
-  parser.add_argument(
     '--port',
     type=int,
     default=8080,
@@ -183,10 +171,14 @@ def main():
   if initial_scenario not in available_scenarios:
     parser.error(f'Scenario not found: "{initial_scenario}"')
 
-  def run_simulation(scenario_name: str, start_year: int | None = None, end_year: int | None = None) -> SimulationData | None:
+  def run_simulation(
+    scenario_name: str,
+    start_year: int | None = None,
+    end_year: int | None = None,
+  ) -> SimulationData | None:
     """Run a full simulation and return the server data dict, or None if no results."""
     try:
-      ctx = _init_scenario(scenario_name, args.sp500_start, args.sp500_end)
+      ctx = _init_scenario(scenario_name)
     except (FileNotFoundError, ValueError) as e:
       print(f'Error loading scenario "{scenario_name}": {e}', file=sys.stderr)
       return None

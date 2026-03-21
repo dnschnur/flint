@@ -30,10 +30,10 @@ class SimulationResult:
   Attributes:
     start_year: The first year of the historical S&P 500 period used.
     assets: Final asset values by category at the end of retirement.
-    history: Per-year snapshots of asset balances at the start of each
-      retirement year, from start_year through end_year (inclusive).
-    real_estate_liquidated: True if Real Estate was force-liquidated in any
-      year to cover a shortfall after all other assets were exhausted.
+    history: Per-year snapshots of asset balances at the start of each retirement year,
+        from start_year through end_year (inclusive).
+    real_estate_liquidated: True if Real Estate was force-liquidated in any year to cover a
+        shortfall after all other assets were exhausted.
   """
   start_year: int
   assets: AssetDefaultDict
@@ -54,8 +54,6 @@ class Simulation:
     current_age: int,
     data_year: int,
     sp500_path: str,
-    simulation_min_year: int | None = None,
-    simulation_max_year: int | None = None,
     inflation: Inflation | None = None,
   ):
     """Initialize the simulation.
@@ -71,8 +69,6 @@ class Simulation:
           projections are calculated; it should match the latest historical year across the assets,
           budget, and income data.
       sp500_path: Path to CSV file with historical S&P 500 data.
-      simulation_min_year: Minimum year for simulation data, or None for the earliest available.
-      simulation_max_year: Maximum year for simulation data, or None for the latest available.
       inflation: Optional historical inflation data. When provided, the Monte Carlo simulation uses
           year-specific historical inflation rates (matched to the S&P 500 replay period) rather
           than the budget category's fixed average rates, improving accuracy of the scenario.
@@ -88,8 +84,8 @@ class Simulation:
     self._sp500_data = self._load_sp500(sp500_path)
 
     available_years = sorted(self._sp500_data.keys())
-    self.simulation_min_year = simulation_min_year or available_years[0]
-    self.simulation_max_year = simulation_max_year or available_years[-1]
+    self.simulation_min_year = available_years[0]
+    self.simulation_max_year = available_years[-1]
 
   def _get_year_budget(self, year: int, retirement_year: int) -> BudgetDict:
     """Returns budget amounts for the given year, omitting zero or absent categories."""
@@ -102,7 +98,7 @@ class Simulation:
   def project_pre_retirement(self, retirement_year: int):
     """Project assets year by year from the data year up to (not including) retirement_year.
 
-    This phase is deterministic — it uses fixed income, budget, and default growth rates rather than
+    This phase is deterministic - it uses fixed income, budget, and default growth rates rather than
     historical S&P 500 data. The result is the same for every simulation run, so it should be
     computed once and reused.
 
@@ -116,8 +112,7 @@ class Simulation:
     # Get initial asset values from the data year
     current_assets = {}
     for category in AssetCategory:
-      value = self.assets.get_category(category, self.data_year, retirement_year)
-      if value > 0:
+      if value := self.assets.get_category(category, self.data_year, retirement_year):
         current_assets[category] = value
 
     # Project year by year, applying income, budget, and default growth rates
@@ -160,14 +155,14 @@ class Simulation:
       start_year: Retirement year (when job income stops).
       end_year: Last year of retirement (inclusive).
       starting_assets: Pre-computed asset values at the start of retirement, as returned by
-        project_pre_retirement(). If not provided, project_pre_retirement() is called internally.
+          project_pre_retirement(). If not provided, project_pre_retirement() is called internally.
 
     Yields:
       SimulationResult for each historical period, containing the historical
       start year and final asset values.
     """
     # Pre-retirement is deterministic; accept pre-computed values to avoid redundant work when the
-    # caller has already called project_pre_retirement() (e.g. to display the starting assets table).
+    # caller has already called project_pre_retirement(), e.g. to display the starting assets table.
     if starting_assets is not None:
       pre_retirement_assets = starting_assets
     else:
@@ -282,8 +277,8 @@ class Simulation:
     current_assets = defaultdict(int, starting_assets)
     current_historical_year = historical_start_year
 
-    # Normally whole-dollar values like this would use an int, but here we use Decimal, so it's
-    # cleaner to recompute it from year-to-year in the loop below, without losing precision.
+    # Kept as Decimal rather than int to avoid precision loss when scaling proportionally on
+    # partial withdrawals.
     stock_basis = self._compute_stock_basis(start_year, current_assets.get(AssetCategory.STOCKS, 0))
 
     # Track budget amounts directly so each year's budget grows by the actual historical
