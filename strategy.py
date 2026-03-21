@@ -371,7 +371,7 @@ class Strategy:
     """Withdraw proportionally from pool to cover shortfall. Returns remaining shortfall.
 
     Args:
-      finances: Current financesancial state; finances.assets is mutated in place.
+      finances: Current financial state; finances.assets is mutated in place.
       pool: Raw balances available for withdrawal, keyed by category.
       shortfall: Deficit to cover.
       weights: Values used to compute each category's proportional share of the shortfall.
@@ -479,9 +479,8 @@ class Strategy:
 
     shortfall = self._withdraw_proportional(finances, pool, shortfall, pool, compute_gross)
 
-    # Sequential cleanup: proportional allocation may leave un-tapped balance when an OI
-    # account's gross-up requirement exceeds its balance. Drain any remaining shortfall from
-    # whatever pool accounts still have balance after the proportional pass.
+    # Sequential cleanup: if a small last-assigned category drains before covering its target,
+    # any larger earlier account with remaining balance can absorb the residual shortfall.
     for category in pool:
       if not shortfall:
         break

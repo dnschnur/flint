@@ -168,10 +168,12 @@ class Simulation:
     """
     # Pre-retirement is deterministic; accept pre-computed values to avoid redundant work when the
     # caller has already called project_pre_retirement() (e.g. to display the starting assets table).
-    if starting_assets:
+    if starting_assets is not None:
       pre_retirement_assets = starting_assets
     else:
-      *_, (_, pre_retirement_assets, _) = self.project_pre_retirement(start_year)
+      pre_retirement_assets = defaultdict(int)
+      for _, pre_retirement_assets, _ in self.project_pre_retirement(start_year):
+        pass
 
     simulation_length = end_year - start_year
     max_historical_start = self.simulation_max_year - simulation_length

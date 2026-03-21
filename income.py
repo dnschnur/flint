@@ -12,7 +12,7 @@ from functools import cache
 
 from rules import parse_rule, Rules
 
-DEFAULT_JOB_INCREASE_RATE = Decimal('0.03')
+DEFAULT_INCOME_GROWTH_RATE = Decimal('0.03')
 
 
 class Income:
@@ -74,7 +74,7 @@ class Income:
 
     amount = base_amount
     for i in range(self.base_year + 1, year + 1):
-      amount = rules.apply(amount, i, retirement_year, DEFAULT_JOB_INCREASE_RATE)
+      amount = rules.apply(amount, i, retirement_year, DEFAULT_INCOME_GROWTH_RATE)
 
     return amount
 
