@@ -99,6 +99,20 @@ class Inflation:
     return None
 
   @cache
+  def overall_rate(self, year: int) -> Decimal:
+    """Return the overall (CPI All Items) inflation rate from year to year + 1.
+
+    Falls back to the average CPI All Items rate when year or year + 1 is outside the dataset.
+
+    Args:
+      year: Start of the one-year interval.
+
+    Returns:
+      Annual inflation rate (e.g. 0.035 for 3.5%).
+    """
+    return self.rate(BudgetCategory.OTHER, year)
+
+  @cache
   def rate(self, category: BudgetCategory, year: int) -> Decimal:
     """Return the inflation rate for a budget category from year to year + 1.
 

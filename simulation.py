@@ -286,6 +286,10 @@ class Simulation:
     # calendar years via Budget.advance.
     current_budget = self._get_year_budget(start_year, retirement_year=start_year)
 
+    # Track Other Income directly so it grows by the matched historical inflation rate
+    # (floored at zero) rather than the fixed long-run average. Rules still fire normally.
+    current_other_income = self.income.get(start_year, retirement_year=start_year)
+
     for year in range(start_year, end_year + 1):
       age = self.current_age + (year - self.data_year)
 
@@ -308,7 +312,7 @@ class Simulation:
       old_stocks = current_assets.get(AssetCategory.STOCKS, 0)
       cg_fraction = max(Decimal(0), 1 - stock_basis / old_stocks) if old_stocks else Decimal(0)
 
-      year_income = self.income.get(year, retirement_year=start_year)
+      year_income = current_other_income
 
       real_estate_before = current_assets[AssetCategory.REAL_ESTATE]
 
@@ -347,6 +351,13 @@ class Simulation:
           )
           for category, amount in current_budget.items()
         }
+
+        # Advance Other Income by one year using the overall inflation rate, floored at zero.
+        overall_inflation = (
+          self.inflation.overall_rate(current_historical_year) if self.inflation else None
+        )
+        current_other_income = self.income.advance_other(
+            year + 1, current_other_income, overall_inflation, retirement_year=start_year)
 
         new_assets = {}
         for category, value in current_assets.items():

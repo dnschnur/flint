@@ -279,7 +279,24 @@ The `[income]` section specifies annual income.
 "Other Income" = 10000    # Rental income, part-time work, etc.; continues through retirement
 ```
 
-Both income types grow at 3% per year by default.
+Job Income grows at 3% per year by default.
+
+During retirement, **Other Income** grows at the actual historical inflation rate matched to each
+scenario's years; the same rate used to inflate your budget. In years where inflation is negative,
+Other Income does not decrease, reflecting the real-world behavior of Social Security COLA, pension
+adjustments, and similar payments that are protected against deflation.
+
+Before retirement, Other Income also grows at 3% per year by default.
+
+#### Growth override
+
+To use a fixed annual growth rate for Other Income instead of tracking inflation, add an
+`[income.growth]` section:
+
+```toml
+[income.growth]
+"Other Income" = 2   # 2% annual growth regardless of inflation
+```
 
 Social Security, pension income, or other retirement income streams that start at a specific age
 are best modeled as Other Income rules that set the amount in the year they begin:
@@ -293,8 +310,6 @@ rules = [
   {year = 2042, "Other Income" = "=36000"},   # Social Security begins
 ]
 ```
-
----
 
 ## Rules
 
@@ -499,8 +514,6 @@ rules = [
 ]
 ```
 
----
-
 ## Complete example
 
 The following scenario models a 45-year-old planning to retire at 65 with a moderately complex
@@ -552,6 +565,6 @@ rules = [
 "Other Income" = 0
 
 rules = [
-  {year = 2045, "Other Income" = "=30000"},   # Social Security begins
+  {year = 2045, "Other Income" = "=30000"},   # Social Security begins; COLA applied automatically
 ]
 ```
