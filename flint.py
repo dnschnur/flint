@@ -199,7 +199,7 @@ def main():
 
     starting_assets = None
     pre_retirement_history = []
-    for year, assets_snapshot, budget_snapshot in sim.project_pre_retirement(start_year):
+    for year, assets_snapshot, budget_snapshot, income in sim.project_pre_retirement(start_year):
       pre_retirement_history.append({
         'year': year + 1,
         'assets': {
@@ -212,6 +212,7 @@ def main():
           for category, amount in budget_snapshot.items()
           if amount
         },
+        'income': income,
       })
       starting_assets = assets_snapshot
 

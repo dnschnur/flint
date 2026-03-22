@@ -134,7 +134,7 @@ class Simulation:
             category, year + 1, value, retirement_year, context=current_assets)
 
       current_assets = new_assets
-      yield year, current_assets, year_budget
+      yield year, current_assets, year_budget, year_income
 
   def run(
     self,
@@ -306,6 +306,7 @@ class Simulation:
           for category, amount in current_budget.items()
           if amount and category.asset_category is None
         },
+        'income': int(current_other_income),
       })
 
       # Compute capital gains fraction from tracked cost basis.
@@ -380,6 +381,7 @@ class Simulation:
         if value
       },
       'budget': {},
+      'income': 0,
     })
 
     return current_assets, history, real_estate_liquidated

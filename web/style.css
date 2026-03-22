@@ -446,6 +446,18 @@ h2 {
   color: var(--muted);
 }
 
+.income-row td {
+  border-bottom: 1px solid rgba(48, 54, 61, 0.9);
+}
+
+.net-row td {
+  border-top: 1px solid var(--divider);
+}
+
+.income-amount {
+  color: var(--positive);
+}
+
 .asset-swatch {
   width: 10px;
   height: 10px;

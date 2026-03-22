@@ -86,6 +86,16 @@ function binColor(ratio) {
 }
 
 /**
+ * Sum all positive values in an object, ignoring zeros and negatives.
+ *
+ * @param {Object} obj - Object with numeric values.
+ * @returns {number}
+ */
+function sumPositive(obj) {
+  return Object.values(obj).filter(value => value > 0).reduce((sum, value) => sum + value, 0);
+}
+
+/**
  * Create an SVG element with the given tag name and attributes.
  *
  * @param {string} tag - SVG tag name (e.g. 'rect', 'line').
@@ -692,11 +702,7 @@ function renderDetailTable(tbody, tfoot, data, prevData, renderName) {
     .filter(([, value]) => value > 0)
     .sort(([, a], [, b]) => b - a);
   const total = entries.reduce((sum, [, value]) => sum + value, 0);
-  const prevTotal = prevData
-    ? Object.values(prevData)
-        .filter(value => value > 0)
-        .reduce((sum, value) => sum + value, 0)
-    : 0;
+  const prevTotal = prevData ? sumPositive(prevData) : 0;
 
   tbody.innerHTML = '';
   for (const [name, value] of entries) {
@@ -759,13 +765,49 @@ function updateDetailTable(snapshot, historicalYear, prevSnapshot) {
         `<span class="asset-swatch" style="background:${color}"></span>${name}</div>`;
     });
 
+  const income     = snapshot.income ?? 0;
+  const prevIncome = prevSnapshot?.income ?? 0;
+
   const hasBudget = snapshot.budget && Object.keys(snapshot.budget).length > 0;
-  document.getElementById('budget-column').hidden = !hasBudget;
+  document.getElementById('budget-column').hidden = !hasBudget && !income;
+
   if (hasBudget) {
     renderDetailTable(budgetBody, budgetFoot, snapshot.budget, prevSnapshot?.budget ?? null,
       (cell, name) => {
         cell.textContent = name;
       });
+  } else {
+    budgetBody.innerHTML = '';
+    budgetFoot.innerHTML = '';
+  }
+
+  if (income > 0) {
+    const budgetTotal = hasBudget ? sumPositive(snapshot.budget) : 0;
+    const prevBudgetTotal = prevSnapshot?.budget ? sumPositive(prevSnapshot.budget) : 0;
+    const prevNet = prevIncome - prevBudgetTotal;
+    const net = income - budgetTotal;
+
+    const incomeRow = document.createElement('tr');
+    incomeRow.className = 'income-row';
+    const incomeNameCell = document.createElement('td');
+    incomeNameCell.textContent = 'Income';
+    incomeRow.appendChild(incomeNameCell);
+    incomeRow.insertAdjacentHTML('beforeend',
+      yearOverYearComparisonCell(income, prevIncome) +
+      '<td class="num">\u2014</td>' +
+      `<td class="num income-amount">${formatMoney(income)}</td>`);
+    budgetBody.prepend(incomeRow);
+
+    const netRow = document.createElement('tr');
+    netRow.className = 'net-row';
+    const netNameCell = document.createElement('td');
+    netNameCell.textContent = 'Net';
+    netRow.appendChild(netNameCell);
+    netRow.insertAdjacentHTML('beforeend',
+      yearOverYearComparisonCell(net, prevNet) +
+      '<td class="num">\u2014</td>' +
+      `<td class="num ${net >= 0 ? 'positive' : 'negative'}">${formatMoney(net)}</td>`);
+    budgetFoot.appendChild(netRow);
   }
 }
 
